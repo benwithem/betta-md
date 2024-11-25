@@ -1,4 +1,4 @@
-import Layout from '../app/Layout';
+import Layout from './Layout';
 import { Card, Text, Button, Group } from '@mantine/core';
 
 const AquariumTracker = () => {
