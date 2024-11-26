@@ -14,8 +14,7 @@ import {
   RingProgress, 
   SimpleGrid,
   TextInput,
-  NumberInput,
-  Space,
+  NumberInput
 } from '@mantine/core';
 import { IconRefresh, IconPlus, IconDroplet, IconThermometer, IconTestPipe2Filled, IconAlertTriangle } from '@tabler/icons-react';
 import { MainLayout } from '../components/layout/MainLayout';
@@ -27,10 +26,10 @@ export default function AquariumTracker() {
   const [ammonia, setAmmonia] = useState<string | number>('');
   const [nitrite, setNitrite] = useState<string | number>('');
   const [nitrate, setNitrate] = useState<string | number>('');
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-  const [sort, setSort] = useState('created_at');
-  const [order, setOrder] = useState('DESC');
+  //const [page, setPage] = useState(1);
+  //const [limit, setLimit] = useState(10);
+  //const [sort, setSort] = useState('created_at');
+  //const [order, setOrder] = useState('DESC');
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

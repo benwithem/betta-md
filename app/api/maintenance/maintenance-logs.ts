@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { query } from '../utils/db';
-import { getRequestContext, CloudflareEnv } from '../types/cloudflare.d';
-import { authMiddleware } from '../utils/auth';
+import { query } from '../../utils/db';
+import { getRequestContext } from '../../types/cloudflare.d';
+import { authMiddleware } from '../../utils/auth';
 
 export const config = {
   runtime: 'edge',

@@ -2,19 +2,12 @@
 
 import { 
   AppShell, 
-  NavLink, 
-  Text, 
-  Group, 
-  UnstyledButton, 
-  ThemeIcon,
   Box
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconHome, IconChartBar, IconFish } from '@tabler/icons-react';
 import { usePathname } from 'next/navigation';
 import { Header } from './Header';
 import { Navbar } from './Navbar';
-import { UserMenu } from './UserMenu';
 
 type MainLayoutProps = {
   children: React.ReactNode;
