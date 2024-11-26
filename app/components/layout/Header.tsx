@@ -5,7 +5,8 @@ import {
   Burger, 
   UnstyledButton, 
   ThemeIcon, 
-  Text 
+  Text,
+  AppShell
 } from '@mantine/core';
 import { IconFish } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -57,5 +58,4 @@ export function Header({ opened, toggle }: HeaderProps) {
     </AppShell.Header>
   );
 }
-
 

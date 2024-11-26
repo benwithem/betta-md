@@ -65,4 +65,3 @@ export function Navbar({ pathname }: NavbarProps) {
   );
 }
 
-

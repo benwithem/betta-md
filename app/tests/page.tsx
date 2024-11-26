@@ -1,6 +1,6 @@
 'use client';
 
-import MainLayout from '../MainLayout';
+import { MainLayout } from '../components/layout/MainLayout';
 import { 
   Container, 
   Title, 

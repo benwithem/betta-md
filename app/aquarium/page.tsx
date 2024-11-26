@@ -12,13 +12,59 @@ import {
   Button, 
   Paper, 
   RingProgress, 
-  SimpleGrid 
+  SimpleGrid,
+  TextInput,
+  NumberInput,
+  Space,
 } from '@mantine/core';
 import { IconRefresh, IconPlus, IconDroplet, IconThermometer, IconTestPipe2Filled, IconAlertTriangle } from '@tabler/icons-react';
 import { MainLayout } from '../components/layout/MainLayout';
 import { WaterParameterCard } from '../components/parameters/WaterParameterCard';
+import { useState } from 'react';
 
 export default function AquariumTracker() {
+  const [ph, setPh] = useState<string | number>('');
+  const [ammonia, setAmmonia] = useState<string | number>('');
+  const [nitrite, setNitrite] = useState<string | number>('');
+  const [nitrate, setNitrate] = useState<string | number>('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [sort, setSort] = useState('created_at');
+  const [order, setOrder] = useState('DESC');
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+
+    try {
+      const response = await fetch(
+        `/api/maintenance-logs?page=${page}&limit=${limit}&sort=${sort}&order=${order}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ ph, ammonia, nitrite, nitrate }),
+        }
+      );
+
+      if (response.ok) {
+        // Clear form and show success message
+        setPh('');
+        setAmmonia('');
+        setNitrite('');
+        setNitrate('');
+        alert('Maintenance log created successfully');
+      } else {
+        // Show error message
+        alert('Failed to create maintenance log');
+      }
+    } catch (error) {
+      console.error('Error creating maintenance log:', error);
+    }
+  }
+
   return (
     <MainLayout>
       <Container size="lg" py="xl">
@@ -99,6 +145,49 @@ export default function AquariumTracker() {
                 status="good"
               />
             </SimpleGrid>
+          </Card>
+
+          {/* Maintenance Log Form */}
+          <Card shadow="sm" p="lg" radius="lg" withBorder>
+            <Title order={3} mb="lg">Add Maintenance Log</Title>
+            <form onSubmit={handleSubmit}>
+              <TextInput
+                label="pH"
+                placeholder="Enter pH value"
+                value={ph}
+                onChange={(e) => setPh(e.target.value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Ammonia"
+                placeholder="Enter ammonia value"
+                step={0.01}
+                value={ammonia}
+                onChange={(value: string | number) => setAmmonia(value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Nitrite"
+                placeholder="Enter nitrite value"
+                step={0.01}
+                value={nitrite}
+                onChange={(value: string | number) => setNitrite(value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Nitrate"
+                placeholder="Enter nitrate value"
+                step={0.01}
+                value={nitrate}
+                onChange={(value: string | number) => setNitrate(value)}
+                required
+                mb="md"
+              />
+              <Button type="submit">Submit</Button>
+            </form>
           </Card>
 
           {/* Recent Logs Section */}

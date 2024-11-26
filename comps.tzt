@@ -1,56 +1,3 @@
-// app/components/layout/MainLayout.tsx
-'use client';
-
-import { 
-  AppShell, 
-  NavLink, 
-  Text, 
-  Group, 
-  UnstyledButton, 
-  ThemeIcon,
-  Box
-} from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import { IconHome, IconChartBar, IconFish } from '@tabler/icons-react';
-import { usePathname } from 'next/navigation';
-import { Header } from './Header';
-import { Navbar } from './Navbar';
-import { UserMenu } from './UserMenu';
-
-type MainLayoutProps = {
-  children: React.ReactNode;
-};
-
-export function MainLayout({ children }: MainLayoutProps) {
-  const [opened, { toggle }] = useDisclosure();
-  const pathname = usePathname();
-
-  return (
-    <AppShell
-      header={{ height: 60 }}
-      navbar={{ 
-        width: 280,
-        breakpoint: 'sm',
-        collapsed: { mobile: !opened }
-      }}
-      padding="md"
-    >
-      <Header opened={opened} toggle={toggle} />
-      <Navbar pathname={pathname} />
-      
-      <AppShell.Main style={{ 
-        backgroundColor: 'var(--mantine-color-gray-0)',
-        backgroundImage: 'radial-gradient(var(--mantine-color-blue-0) 1px, transparent 1px)',
-        backgroundSize: '20px 20px'
-      }}>
-        <Box style={{ minHeight: '100vh' }}>
-          {children}
-        </Box>
-      </AppShell.Main>
-    </AppShell>
-  );
-}
-
 // app/components/layout/Header.tsx
 'use client';
 
@@ -59,7 +6,8 @@ import {
   Burger, 
   UnstyledButton, 
   ThemeIcon, 
-  Text 
+  Text,
+  AppShell
 } from '@mantine/core';
 import { IconFish } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -111,7 +59,6 @@ export function Header({ opened, toggle }: HeaderProps) {
     </AppShell.Header>
   );
 }
-
 // app/components/layout/Navbar.tsx
 'use client';
 
@@ -179,133 +126,55 @@ export function Navbar({ pathname }: NavbarProps) {
     </AppShell.Navbar>
   );
 }
-
-// app/components/layout/UserMenu.tsx
+// app/components/layout/MainLayout.tsx
 'use client';
 
-import { Avatar, Menu, Text } from '@mantine/core';
 import { 
-  IconUser, 
-  IconSettings, 
-  IconHelp, 
-  IconLogout 
-} from '@tabler/icons-react';
+  AppShell, 
+  NavLink, 
+  Text, 
+  Group, 
+  UnstyledButton, 
+  ThemeIcon,
+  Box
+} from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
+import { IconHome, IconChartBar, IconFish } from '@tabler/icons-react';
+import { usePathname } from 'next/navigation';
+import { Header } from './Header';
+import { Navbar } from './Navbar';
+import { UserMenu } from './UserMenu';
 
-export function UserMenu() {
-  return (
-    <Menu shadow="md" width={200}>
-      <Menu.Target>
-        <Avatar 
-          color="blue" 
-          radius="xl" 
-          style={{ cursor: 'pointer' }}
-        >
-          AQ
-        </Avatar>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Label>Account</Menu.Label>
-        <Menu.Item leftSection={<IconUser size={14} />}>
-          Profile
-        </Menu.Item>
-        <Menu.Item leftSection={<IconSettings size={14} />}>
-          Settings
-        </Menu.Item>
-        <Menu.Item leftSection={<IconHelp size={14} />}>
-          Help
-        </Menu.Item>
-        <Menu.Divider />
-        <Menu.Item 
-          leftSection={<IconLogout size={14} />}
-          color="red"
-        >
-          Logout
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
-  );
-}
+type MainLayoutProps = {
+  children: React.ReactNode;
+};
 
-// app/components/ui/ThemeToggle.tsx
-'use client';
-
-import { ActionIcon, Tooltip, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
-import { IconSun, IconMoon } from '@tabler/icons-react';
-
-export function ThemeToggle() {
-  const { setColorScheme } = useMantineColorScheme();
-  const computedColorScheme = useComputedColorScheme('light');
+export function MainLayout({ children }: MainLayoutProps) {
+  const [opened, { toggle }] = useDisclosure();
+  const pathname = usePathname();
 
   return (
-    <Tooltip label={`Switch to ${computedColorScheme === 'dark' ? 'light' : 'dark'} theme`}>
-      <ActionIcon
-        onClick={() => setColorScheme(computedColorScheme === 'dark' ? 'light' : 'dark')}
-        variant="subtle"
-        color="gray"
-        size="lg"
-      >
-        {computedColorScheme === 'dark' ? (
-          <IconSun size={20} color="white" />
-        ) : (
-          <IconMoon size={20} color="white" />
-        )}
-      </ActionIcon>
-    </Tooltip>
-  );
-}
-
-// app/components/ui/LoadingSpinner.tsx
-'use client';
-
-import { Center, Loader, Stack, Text } from '@mantine/core';
-
-interface LoadingSpinnerProps {
-  message?: string;
-}
-
-export function LoadingSpinner({ message = 'Loading...' }: LoadingSpinnerProps) {
-  return (
-    <Center h="100vh">
-      <Stack align="center" gap="xs">
-        <Loader size="lg" color="blue" />
-        <Text size="sm" c="dimmed">{message}</Text>
-      </Stack>
-    </Center>
-  );
-}
-
-// app/components/ui/ErrorBoundary.tsx
-'use client';
-
-import { Alert, Button, Container, Stack, Text, Title } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
-
-interface ErrorBoundaryProps {
-  error: Error;
-  reset: () => void;
-}
-
-export function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
-  return (
-    <Container size="md" py="xl">
-      <Stack align="center" gap="md">
-        <Alert 
-          icon={<IconAlertCircle size={24} />}
-          title="Something went wrong!"
-          color="red"
-          radius="md"
-        >
-          {error.message}
-        </Alert>
-        <Button 
-          onClick={reset}
-          variant="light"
-          color="blue"
-          size="md"
-        >
-          Try again
-        </Button>
-      </Stack>
-    </Container>
+    <AppShell
+      header={{ height: 60 }}
+      navbar={{ 
+        width: 280,
+        breakpoint: 'sm',
+        collapsed: { mobile: !opened }
+      }}
+      padding="md"
+    >
+      <Header opened={opened} toggle={toggle} />
+      <Navbar pathname={pathname} />
+      
+      <AppShell.Main style={{ 
+        backgroundColor: 'var(--mantine-color-gray-0)',
+        backgroundImage: 'radial-gradient(var(--mantine-color-blue-0) 1px, transparent 1px)',
+        backgroundSize: '20px 20px'
+      }}>
+        <Box style={{ minHeight: '100vh' }}>
+          {children}
+        </Box>
+      </AppShell.Main>
+    </AppShell>
   );
 }
