@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
     }, { status: 401 });
   }
 
-  const payload = await verifyToken(token);
+  const payload = await verifyToken(token) as { userId: number };
   if (!payload) {
     if (!pathname.startsWith('/api/')) {
       return NextResponse.redirect(new URL('/login', request.url));
@@ -74,7 +74,7 @@ export function authMiddleware(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
       }
   
-      const payload = await verifyToken(token);
+      const payload = await verifyToken(token) as { userId: number };
       if (!payload) {
         return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
       }
