@@ -11,7 +11,7 @@ import {
 import { IconFish } from '@tabler/icons-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
-import { ThemeToggle } from '../ui/ThemeToggle';
+import { ThemeToggle } from '../shared/ThemeToggle';
 
 interface HeaderProps {
   opened: boolean;

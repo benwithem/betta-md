@@ -1,65 +1,44 @@
-// ./app/api/maintenance-logs/route.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import type { 
-  CloudflareEnv, 
-  MaintenanceLog 
-} from '../../types/cloudflare.d';
+import { NextRequest, NextResponse } from 'next/server';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+import { mockAuthMiddleware } from '@/app/utils/mockAuth';
 
-export const runtime = 'edge';
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  const userId = request.headers.get('X-User-Id');
 
-type MaintenanceLogInput = Omit<MaintenanceLog, 'id' | 'created_at'>;
-
-export async function POST(request: NextRequest) {
-  try {
-    const data = await request.json() as MaintenanceLogInput;
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate required fields
-    if (!data.maintenance_type) {
-      return NextResponse.json(
-        { success: false, error: 'Maintenance type is required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate other fields as needed
-    if (typeof data.ph !== 'undefined' && (data.ph < 0 || data.ph > 14)) {
-      return NextResponse.json(
-        { success: false, error: 'pH value must be between 0 and 14' },
-        { status: 400 }
-      );
-    }
-
-    // Build dynamic query based on provided fields
-    const fields = Object.keys(data).filter(key => data[key as keyof MaintenanceLogInput] !== undefined);
-    const values = fields.map(key => data[key as keyof MaintenanceLogInput]);
-    const query = `
-      INSERT INTO maintenance_logs (${fields.join(', ')})
-      VALUES (${fields.map(() => '?').join(', ')})
-    `;
-
-    await db.prepare(query).bind(...values).run();
-
-    return NextResponse.json({ 
-      success: true,
-      message: 'Maintenance log created successfully'
-    });
-
-  } catch (error) {
-    console.error('Error in maintenance log POST:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create maintenance log' },
-      { status: 500 }
-    );
+  if (request.method === 'POST') {
+    return handlePost(request, env, userId);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env, userId);
+  } else if (request.method === 'DELETE') {
+    return handleDelete(request, env, userId);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
   }
 }
 
-export async function GET(request: NextRequest) {
+async function handlePost(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    interface MaintenanceLog {
+        ph: number;
+        ammonia: number;
+        nitrite: number;
+        nitrate: number;
+    }
+
+    const { ph, ammonia, nitrite, nitrate }: MaintenanceLog = await request.json();
+
+    await env.DB.prepare(
+      'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)'
+    ).bind(userId, ph, ammonia, nitrite, nitrate).run();
+
+    return NextResponse.json({ message: 'Maintenance log created successfully' }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to create maintenance log' }, { status: 500 });
+  }
+}
+
+async function handleGet(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -68,31 +47,35 @@ export async function GET(request: NextRequest) {
     const order = searchParams.get('order') || 'DESC';
     const offset = (page - 1) * limit;
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    const results = await db.prepare(`
-      SELECT * FROM maintenance_logs
-      ORDER BY ?? ${order}
+    const logs = await env.DB.prepare(`
+      SELECT * FROM maintenance_logs 
+      WHERE user_id = ? 
+      ORDER BY ${sort} ${order} 
       LIMIT ? OFFSET ?
-    `).bind(sort, limit, offset).all<MaintenanceLog>();
+    `).bind(userId, limit, offset).all();
 
-    return NextResponse.json({
-      success: true,
-      data: results.results,
-      pagination: {
-        page,
-        limit,
-        total: results.results?.length || 0
-      }
-    });
-
+    return NextResponse.json({ logs: logs.results, page, limit });
   } catch (error) {
-    console.error('Error in maintenance log GET:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch maintenance logs' },
-      { status: 500 }
-    );
+    console.error('Error fetching maintenance logs:', error);
+    return NextResponse.json({ error: 'Failed to fetch maintenance logs' }, { status: 500 });
   }
 }
+
+async function handleDelete(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { id } = await request.json() as { id: string };
+
+    await env.DB.prepare(
+      'DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?'
+    ).bind(id, userId).run();
+
+    return NextResponse.json({ message: 'Maintenance log deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to delete maintenance log' }, { status: 500 });
+  }
+}
+
+export const GET = mockAuthMiddleware(handler);
+export const POST = mockAuthMiddleware(handler);
+export const DELETE = mockAuthMiddleware(handler);

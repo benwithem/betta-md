@@ -1,8 +1,6 @@
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-
-export const runtime = 'edge';
 
 type Species = 'Mystery Snail' | 'Ghost Shrimp' | 'Nerite Snail';
 
@@ -12,25 +10,30 @@ const BETTA_COMPATIBLE_SPECIES: Record<Species, { max_count: number; current: nu
   'Nerite Snail': { max_count: 2, current: 2 }
 };
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
+
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { 
       species, 
       count, 
       notes,
       date_added
-    }: { 
+    } = await request.json() as { 
       species: Species; 
       count: number; 
       notes: string; 
       date_added: string 
-    } = await request.json();
+    };
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate compatibility
     if (!BETTA_COMPATIBLE_SPECIES[species]) {
       return NextResponse.json({ 
         success: false, 
@@ -38,7 +41,6 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Check tank capacity
     const currentCount = BETTA_COMPATIBLE_SPECIES[species].current;
     const maxCount = BETTA_COMPATIBLE_SPECIES[species].max_count;
     
@@ -49,8 +51,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Add inhabitant record
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO inhabitants 
       (species, count, notes, date_added) 
       VALUES (?, ?, ?, ?)
@@ -70,13 +71,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT * FROM inhabitants 
       ORDER BY date_added DESC
     `).all();
@@ -95,3 +92,6 @@ export async function GET() {
     }, { status: 500 });
   }
 }
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);

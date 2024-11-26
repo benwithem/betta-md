@@ -1,13 +1,9 @@
-// ./app/api/equipment/route.ts
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-
-export const runtime = 'edge';
 
 type EquipmentType = 'filter_media' | 'heater' | 'water_pump' | 'air_pump';
 
-// Define the maintenance schedules for different equipment types
 const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; maintenance: string }> = {
   'filter_media': { 
     interval_days: 30,
@@ -27,19 +23,18 @@ const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; main
   }
 };
 
-export async function POST(request: Request) {
-  try {
-    // Define the expected structure of the request body
-    interface NewEquipmentData {
-      equipment_type: string;
-      brand: string;
-      model: string;
-      purchase_date: string;
-      last_maintenance: string;
-      notes: string;
-    }
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
 
-    // Retrieve the equipment data from the request body
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  try {
     const { 
       equipment_type,
       brand,
@@ -47,14 +42,15 @@ export async function POST(request: Request) {
       purchase_date,
       last_maintenance,
       notes 
-    } = await request.json() as NewEquipmentData;
+    } = await request.json() as {
+      equipment_type: string;
+      brand: string;
+      model: string;
+      purchase_date: string;
+      last_maintenance: string;
+      notes: string;
+    };
 
-    // Get the necessary environment variables and database connection
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate the equipment type
     if (!MAINTENANCE_SCHEDULES[equipment_type as EquipmentType]) {
       return NextResponse.json(
         { success: false, error: 'Invalid equipment type' },
@@ -62,8 +58,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Insert the new equipment record into the database
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO equipment 
       (equipment_type, brand, model, purchase_date, last_maintenance, notes) 
       VALUES (?, ?, ?, ?, ?, ?)
@@ -76,14 +71,12 @@ export async function POST(request: Request) {
       notes
     ).run();
 
-    // Return the maintenance schedule for the new equipment
     return NextResponse.json({ 
       maintenance_schedule: MAINTENANCE_SCHEDULES[equipment_type as EquipmentType],
       message: 'Equipment added successfully'
     });
 
   } catch (error) {
-    // Log the error and return a server error response
     console.error('Equipment error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -92,15 +85,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
-    // Get the necessary environment variables and database connection
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Fetch all the equipment records from the database
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT 
         *, 
         datetime(last_maintenance, '+30 days') as next_maintenance_due
@@ -108,7 +95,6 @@ export async function GET() {
       ORDER BY next_maintenance_due ASC
     `).all();
 
-    // Return the equipment data and maintenance schedules
     return NextResponse.json({ 
       success: true,
       data: results.results,
@@ -116,7 +102,6 @@ export async function GET() {
     });
 
   } catch (error) {
-    // Log the error and return a server error response
     console.error('Equipment fetch error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -124,3 +109,6 @@ export async function GET() {
     }, { status: 500 });
   }
 }
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);

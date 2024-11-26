@@ -30,7 +30,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "app/types/cloudflare.d.ts"
+    "app/types/cloudflare.ts"
   ],
   "exclude": ["node_modules"]
 }

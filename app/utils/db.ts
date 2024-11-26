@@ -1,4 +1,4 @@
-import { D1Database, getRequestContext } from '../types/cloudflare.d';
+import { D1Database, getRequestContext } from '../types/cloudflare';
 
 let db: D1Database;
 

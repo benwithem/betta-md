@@ -15,10 +15,12 @@
   "dependencies": {
     "@clerk/nextjs": "^6.5.0",
     "@mantine/core": "^7.14.2",
+    "@mantine/form": "^7.14.2",
     "@mantine/hooks": "^7.14.2",
     "@tabler/icons-react": "^3.22.0",
     "bcrypt": "^5.1.1",
     "cookie": "^1.0.2",
+    "jose": "^4.11.1",
     "jsonwebtoken": "^9.0.2",
     "next": "14.2.5",
     "react": "^18",

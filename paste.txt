@@ -73,11 +73,12 @@ Project Structure:
 |   |-- tests/
 |   |   |-- page.tsx
 |   |-- types/
-|   |   |-- cloudflare.d.ts
+|   |   |-- cloudflare.ts
 |   |   |-- metadata.ts
 |   |-- utils/
 |       |-- auth.ts
 |       |-- db.ts
+|       |-- mockAuth.ts
 |-- comps.txt
 |-- env.d.ts
 |-- generate-master-file.sh*
@@ -100,7 +101,7 @@ Project Structure:
 |-- tsconfig.json
 |-- wrangler.toml
 
-32 directories, 66 files
+32 directories, 67 files
 
 File Contents:
 =============
@@ -138,13 +139,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 ------------------
 // ./app/api/auth/login/route.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { createToken } from '@/app/utils/auth';
+import { getRequestContext } from '../../../types/cloudflare';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-import { sign, verify } from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export async function POST(request: NextRequest) {
   try {
@@ -155,17 +153,78 @@ export async function POST(request: NextRequest) {
     const db = env.DB;
 
     const user = await db.prepare(
-      'SELECT id, email FROM users WHERE email = ? AND password_hash = ?'
-    ).bind(email, password).first() as { id: number, email: string } | null;
+      'SELECT id, email, password_hash FROM users WHERE email = ?'
+    ).bind(email).first() as { id: number, email: string, password_hash: string } | null;
 
     if (!user) {
+      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    }
+
+    // Here you should use a proper password hashing library to compare passwords
+    // For example, bcrypt or Argon2. This is a simplified version.
+    if (user.password_hash !== password) {
+      return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 });
+    }
+
+    const token = await createToken({ userId: user.id });
+
+    return NextResponse.json(
+      {
+        success: true,
+        token,
+        user: { id: user.id, email: user.email }
+      },
+      {
+        status: 200,
+        headers: {
+          'Set-Cookie': `auth-token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`
+        }
+      }
+    );
+
+  } catch (error) {
+    console.error('Login error:', error);
+    return NextResponse.json({ success: false, error: 'Authentication failed' }, { status: 500 });
+  }
+}
+
+
+------------------
+// ./app/api/auth/logout/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { createToken } from '@/app/utils/auth';
+import { getRequestContext } from '../../../types/cloudflare';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { email, password } = await request.json() as { email: string, password: string };
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const user = await db.prepare(
+      'SELECT id, email, password_hash FROM users WHERE email = ?'
+    ).bind(email).first() as { id: number, email: string, password_hash: string } | null;
+
+    if (!user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User not found' 
+      }, { status: 404 });
+    }
+
+    // Here you should use a proper password hashing library to compare passwords
+    // For example, bcrypt or Argon2. This is a simplified version.
+    if (user.password_hash !== password) {
       return NextResponse.json({ 
         success: false, 
         error: 'Invalid credentials' 
       }, { status: 401 });
     }
 
-    const token = sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
+    const token = await createToken({ userId: user.id });
 
     return NextResponse.json({
       success: true,
@@ -185,101 +244,6 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-// app/api/auth/register/route.ts
-export async function registerPOST(request: NextRequest) {
-  try {
-    const { email, password } = await request.json() as { email: string, password: string };
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Check if user exists
-    const existing = await db.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(email).first();
-
-    if (existing) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Email already registered' 
-      }, { status: 400 });
-    }
-
-    // Create new user
-    const result = await db.prepare(
-      'INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id'
-    ).bind(email, password).first() as { id: number };
-
-    const token = sign({ userId: result.id }, JWT_SECRET, { expiresIn: '24h' });
-
-    return NextResponse.json({
-      success: true,
-      token,
-      user: { id: result.id, email }
-    }, {
-      headers: {
-        'Set-Cookie': `auth-token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`
-      }
-    });
-
-  } catch (error) {
-    console.error('Registration error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Registration failed' 
-    }, { status: 500 });
-  }
-}
-
-// app/api/auth/verify/route.ts
-export async function GET(request: NextRequest) {
-  try {
-    const token = request.cookies.get('auth-token')?.value;
-
-    if (!token) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'No token provided' 
-      }, { status: 401 });
-    }
-
-    const decoded = verify(token, JWT_SECRET) as { userId: number };
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    const user = await db.prepare(
-      'SELECT id, email FROM users WHERE id = ?'
-    ).bind(decoded.userId).first() as { id: number, email: string } | null;
-
-    if (!user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'User not found' 
-      }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      user: { id: user.id, email: user.email }
-    });
-
-  } catch (error) {
-    console.error('Token verification error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Invalid token' 
-    }, { status: 401 });
-  }
-}
-
-------------------
-// ./app/api/auth/logout/route.ts
-
-/* TODO: This file needs implementation */
 
 
 ------------------
@@ -322,16 +286,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 ------------------
 // ./app/api/equipment/route.ts
-// ./app/api/equipment/route.ts
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-
-export const runtime = 'edge';
 
 type EquipmentType = 'filter_media' | 'heater' | 'water_pump' | 'air_pump';
 
-// Define the maintenance schedules for different equipment types
 const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; maintenance: string }> = {
   'filter_media': { 
     interval_days: 30,
@@ -351,19 +311,18 @@ const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; main
   }
 };
 
-export async function POST(request: Request) {
-  try {
-    // Define the expected structure of the request body
-    interface NewEquipmentData {
-      equipment_type: string;
-      brand: string;
-      model: string;
-      purchase_date: string;
-      last_maintenance: string;
-      notes: string;
-    }
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
 
-    // Retrieve the equipment data from the request body
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  try {
     const { 
       equipment_type,
       brand,
@@ -371,14 +330,15 @@ export async function POST(request: Request) {
       purchase_date,
       last_maintenance,
       notes 
-    } = await request.json() as NewEquipmentData;
+    } = await request.json() as {
+      equipment_type: string;
+      brand: string;
+      model: string;
+      purchase_date: string;
+      last_maintenance: string;
+      notes: string;
+    };
 
-    // Get the necessary environment variables and database connection
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate the equipment type
     if (!MAINTENANCE_SCHEDULES[equipment_type as EquipmentType]) {
       return NextResponse.json(
         { success: false, error: 'Invalid equipment type' },
@@ -386,8 +346,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Insert the new equipment record into the database
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO equipment 
       (equipment_type, brand, model, purchase_date, last_maintenance, notes) 
       VALUES (?, ?, ?, ?, ?, ?)
@@ -400,14 +359,12 @@ export async function POST(request: Request) {
       notes
     ).run();
 
-    // Return the maintenance schedule for the new equipment
     return NextResponse.json({ 
       maintenance_schedule: MAINTENANCE_SCHEDULES[equipment_type as EquipmentType],
       message: 'Equipment added successfully'
     });
 
   } catch (error) {
-    // Log the error and return a server error response
     console.error('Equipment error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -416,15 +373,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
-    // Get the necessary environment variables and database connection
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Fetch all the equipment records from the database
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT 
         *, 
         datetime(last_maintenance, '+30 days') as next_maintenance_due
@@ -432,7 +383,6 @@ export async function GET() {
       ORDER BY next_maintenance_due ASC
     `).all();
 
-    // Return the equipment data and maintenance schedules
     return NextResponse.json({ 
       success: true,
       data: results.results,
@@ -440,7 +390,6 @@ export async function GET() {
     });
 
   } catch (error) {
-    // Log the error and return a server error response
     console.error('Equipment fetch error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -449,13 +398,14 @@ export async function GET() {
   }
 }
 
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
+
 ------------------
 // ./app/api/inhabitants/route.ts
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-
-export const runtime = 'edge';
 
 type Species = 'Mystery Snail' | 'Ghost Shrimp' | 'Nerite Snail';
 
@@ -465,25 +415,30 @@ const BETTA_COMPATIBLE_SPECIES: Record<Species, { max_count: number; current: nu
   'Nerite Snail': { max_count: 2, current: 2 }
 };
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
+
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { 
       species, 
       count, 
       notes,
       date_added
-    }: { 
+    } = await request.json() as { 
       species: Species; 
       count: number; 
       notes: string; 
       date_added: string 
-    } = await request.json();
+    };
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate compatibility
     if (!BETTA_COMPATIBLE_SPECIES[species]) {
       return NextResponse.json({ 
         success: false, 
@@ -491,7 +446,6 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Check tank capacity
     const currentCount = BETTA_COMPATIBLE_SPECIES[species].current;
     const maxCount = BETTA_COMPATIBLE_SPECIES[species].max_count;
     
@@ -502,8 +456,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Add inhabitant record
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO inhabitants 
       (species, count, notes, date_added) 
       VALUES (?, ?, ?, ?)
@@ -523,13 +476,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT * FROM inhabitants 
       ORDER BY date_added DESC
     `).all();
@@ -549,70 +498,53 @@ export async function GET() {
   }
 }
 
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
+
+
 ------------------
 // ./app/api/maintenance-logs/route.ts
-// ./app/api/maintenance-logs/route.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import type { 
-  CloudflareEnv, 
-  MaintenanceLog 
-} from '../../types/cloudflare.d';
+import { NextRequest, NextResponse } from 'next/server';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+import { mockAuthMiddleware } from '@/app/utils/mockAuth';
 
-export const runtime = 'edge';
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  const userId = request.headers.get('X-User-Id');
 
-type MaintenanceLogInput = Omit<MaintenanceLog, 'id' | 'created_at'>;
-
-export async function POST(request: NextRequest) {
-  try {
-    const data = await request.json() as MaintenanceLogInput;
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate required fields
-    if (!data.maintenance_type) {
-      return NextResponse.json(
-        { success: false, error: 'Maintenance type is required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate other fields as needed
-    if (typeof data.ph !== 'undefined' && (data.ph < 0 || data.ph > 14)) {
-      return NextResponse.json(
-        { success: false, error: 'pH value must be between 0 and 14' },
-        { status: 400 }
-      );
-    }
-
-    // Build dynamic query based on provided fields
-    const fields = Object.keys(data).filter(key => data[key as keyof MaintenanceLogInput] !== undefined);
-    const values = fields.map(key => data[key as keyof MaintenanceLogInput]);
-    const query = `
-      INSERT INTO maintenance_logs (${fields.join(', ')})
-      VALUES (${fields.map(() => '?').join(', ')})
-    `;
-
-    await db.prepare(query).bind(...values).run();
-
-    return NextResponse.json({ 
-      success: true,
-      message: 'Maintenance log created successfully'
-    });
-
-  } catch (error) {
-    console.error('Error in maintenance log POST:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create maintenance log' },
-      { status: 500 }
-    );
+  if (request.method === 'POST') {
+    return handlePost(request, env, userId);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env, userId);
+  } else if (request.method === 'DELETE') {
+    return handleDelete(request, env, userId);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
   }
 }
 
-export async function GET(request: NextRequest) {
+async function handlePost(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    interface MaintenanceLog {
+        ph: number;
+        ammonia: number;
+        nitrite: number;
+        nitrate: number;
+    }
+
+    const { ph, ammonia, nitrite, nitrate }: MaintenanceLog = await request.json();
+
+    await env.DB.prepare(
+      'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)'
+    ).bind(userId, ph, ammonia, nitrite, nitrate).run();
+
+    return NextResponse.json({ message: 'Maintenance log created successfully' }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to create maintenance log' }, { status: 500 });
+  }
+}
+
+async function handleGet(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -621,43 +553,46 @@ export async function GET(request: NextRequest) {
     const order = searchParams.get('order') || 'DESC';
     const offset = (page - 1) * limit;
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    const results = await db.prepare(`
-      SELECT * FROM maintenance_logs
-      ORDER BY ?? ${order}
+    const logs = await env.DB.prepare(`
+      SELECT * FROM maintenance_logs 
+      WHERE user_id = ? 
+      ORDER BY ${sort} ${order} 
       LIMIT ? OFFSET ?
-    `).bind(sort, limit, offset).all<MaintenanceLog>();
+    `).bind(userId, limit, offset).all();
 
-    return NextResponse.json({
-      success: true,
-      data: results.results,
-      pagination: {
-        page,
-        limit,
-        total: results.results?.length || 0
-      }
-    });
-
+    return NextResponse.json({ logs: logs.results, page, limit });
   } catch (error) {
-    console.error('Error in maintenance log GET:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch maintenance logs' },
-      { status: 500 }
-    );
+    console.error('Error fetching maintenance logs:', error);
+    return NextResponse.json({ error: 'Failed to fetch maintenance logs' }, { status: 500 });
   }
 }
 
+async function handleDelete(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { id } = await request.json() as { id: string };
+
+    await env.DB.prepare(
+      'DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?'
+    ).bind(id, userId).run();
+
+    return NextResponse.json({ message: 'Maintenance log deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to delete maintenance log' }, { status: 500 });
+  }
+}
+
+export const GET = mockAuthMiddleware(handler);
+export const POST = mockAuthMiddleware(handler);
+export const DELETE = mockAuthMiddleware(handler);
+
+
 ------------------
 // ./app/api/parameters/route.ts
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-export const runtime = 'edge';
 
-// Parameter ranges for Betta fish
 const PARAMETER_RANGES = {
   ph: { min: 6.5, max: 7.5, optimal: 7.0 },
   temperature: { min: 76, max: 82, optimal: 78 },
@@ -668,32 +603,33 @@ const PARAMETER_RANGES = {
   kh: { min: 3, max: 8, optimal: 5 }
 };
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
+
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { 
       ph, temperature, ammonia, nitrite, nitrate, gh, kh 
-    }: { 
+    } = await request.json() as { 
       ph: number, temperature: number, ammonia: number, nitrite: number, nitrate: number, gh: number, kh: number 
-    } = await request.json();
+    };
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate parameters
     const validation = validateParameters({
       ph, temperature, ammonia, nitrite, nitrate, gh, kh
     });
 
     if (!validation.valid) {
-      return NextResponse.json({ 
-        success: false, 
-        error: validation.errors 
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: validation.errors }, { status: 400 });
     }
 
-    // Store parameters
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO water_parameters 
       (ph, temperature, ammonia, nitrite, nitrate, gh, kh) 
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -705,27 +641,20 @@ export async function POST(request: Request) {
       recommendations: generateRecommendations({
         ph, temperature, ammonia, nitrite, nitrate, gh, kh
       })
-    });
+    }, { status: 201 });
 
   } catch (error) {
     console.error('Parameters error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to record parameters' 
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to record parameters' }, { status: 500 });
   }
 }
 
-export async function GET(request: Request) {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '7');
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
 
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT * FROM water_parameters 
       WHERE created_at >= datetime('now', '-' || ? || ' days')
       ORDER BY created_at DESC
@@ -739,10 +668,7 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('Parameters fetch error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch parameters' 
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to fetch parameters' }, { status: 500 });
   }
 }
 
@@ -800,6 +726,9 @@ function generateRecommendations(params: any) {
 
   return recommendations;
 }
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
 
 ------------------
 // ./app/api/route.ts
@@ -1160,7 +1089,7 @@ import {
 import { IconFish } from '@tabler/icons-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
-import { ThemeToggle } from '../ui/ThemeToggle';
+import { ThemeToggle } from '../shared/ThemeToggle';
 
 interface HeaderProps {
   opened: boolean;
@@ -1382,8 +1311,129 @@ export function UserMenu() {
 
 ------------------
 // ./app/components/maintinence/MaintenanceForm.tsx
+import React, { useState } from 'react';
+import { 
+  NumberInput, 
+  Button, 
+  Box, 
+  Title, 
+  Group, 
+  Stack,
+  Alert
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { IconAlertCircle } from '@tabler/icons-react';
 
-/* TODO: This file needs implementation */
+interface MaintenanceLogFormValues {
+  ph: number;
+  ammonia: number;
+  nitrite: number;
+  nitrate: number;
+}
+
+export function MaintenanceForm() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  const form = useForm<MaintenanceLogFormValues>({
+    initialValues: {
+      ph: 7.0,
+      ammonia: 0,
+      nitrite: 0,
+      nitrate: 0,
+    },
+    validate: {
+      ph: (value) => (value < 0 || value > 14 ? 'pH must be between 0 and 14' : null),
+      ammonia: (value) => (value < 0 ? 'Ammonia cannot be negative' : null),
+      nitrite: (value) => (value < 0 ? 'Nitrite cannot be negative' : null),
+      nitrate: (value) => (value < 0 ? 'Nitrate cannot be negative' : null),
+    },
+  });
+
+  const handleSubmit = async (values: MaintenanceLogFormValues) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    try {
+      const response = await fetch('/api/maintenance-logs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // No need for Authorization header with our mock setup
+        },
+        body: JSON.stringify(values),
+      });
+
+      if (response.ok) {
+        setSubmitSuccess(true);
+        form.reset();
+      } else {
+        const errorData: { error?: string } = await response.json();
+        setSubmitError(errorData.error || 'Failed to create maintenance log');
+      }
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setSubmitError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Box maw={400} mx="auto">
+      <Title order={2} mb="md">Add Maintenance Log</Title>
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        <Stack>
+          <NumberInput
+            label="pH"
+            placeholder="Enter pH value"
+            min={0}
+            max={14}
+            step={0.1}
+            {...form.getInputProps('ph')}
+          />
+          <NumberInput
+            label="Ammonia (ppm)"
+            placeholder="Enter ammonia level"
+            min={0}
+            step={0.01}
+          />
+          <NumberInput
+            label="Nitrite (ppm)"
+            placeholder="Enter nitrite level"
+            min={0}
+            step={0.01}
+            {...form.getInputProps('nitrite')}
+          />
+          <NumberInput
+            label="Nitrate (ppm)"
+            placeholder="Enter nitrate level"
+            min={0}
+            step={0.1}
+            {...form.getInputProps('nitrate')}
+          />
+          {submitError && (
+            <Alert icon={<IconAlertCircle size="1rem" />} title="Error!" color="red">
+              {submitError}
+            </Alert>
+          )}
+          {submitSuccess && (
+            <Alert icon={<IconAlertCircle size="1rem" />} title="Success!" color="green">
+              Maintenance log created successfully!
+            </Alert>
+          )}
+          <Group justify="flex-end" mt="md">
+            <Button type="submit" loading={isSubmitting}>
+              Submit
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </Box>
+  );
+}
 
 
 ------------------
@@ -1671,7 +1721,6 @@ body {
 
 ------------------
 // ./app/layout.tsx
-// app/layout.tsx
 import '@mantine/core/styles.css';
 import './globals.css';
 import { MantineProvider, createTheme, ColorSchemeScript } from '@mantine/core';
@@ -1736,6 +1785,7 @@ export default function RootLayout({
   );
 }
 
+
 ------------------
 // ./app/loading.tsx
 import { Container, Loader, Center } from '@mantine/core';
@@ -1753,95 +1803,89 @@ export default function Loading() {
 
 ------------------
 // ./app/maintenance/page.ts
-import { NextApiRequest, NextApiResponse } from 'next';
-import { query } from '../utils/db';
-import { getRequestContext } from '../types/cloudflare';
+import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from '../utils/auth';
+import { CloudflareEnv } from '../types/cloudflare';
 
-export const config = {
-  runtime: 'edge',
-  viewport: {
-    viewportWidth: 'device-width',
-    viewportInitialScale: 1,
-    viewportMinimumScale: 1,
-    viewportMaximumScale: 1,
-  },
-};
+export const runtime = 'edge';
 
-type ExtendedNextApiRequest = NextApiRequest & {
-  body: {
-    ph: number;
-    ammonia: number;
-    nitrite: number;
-    nitrate: number;
-    id?: number;
-  };
-  query: {
-    page?: string;
-    limit?: string;
-    sort?: string;
-    order?: string;
-  };
-};
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  const userId = request.headers.get('X-User-Id');
 
-async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
-  const ctx = getRequestContext();
-  const userId = process.env.USER_ID;
-
-  if (req.method === 'POST') {
-    const { ph, ammonia, nitrite, nitrate } = req.body;
-
-    try {
-      await query(
-        'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)',
-        [userId, ph, ammonia, nitrite, nitrate]
-      );
-      res.status(201).json({ message: 'Maintenance log created successfully' });
-    } catch (error) {
-      console.error('Error creating maintenance log:', error);
-      res.status(500).json({ error: 'Failed to create maintenance log' });
-    }
-  } else if (req.method === 'GET') {
-    const { page = '1', limit = '10', sort = 'created_at', order = 'DESC' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
-
-    try {
-      const logs = await query(
-        `SELECT * FROM maintenance_logs WHERE user_id = ? ORDER BY ?? ${order} LIMIT ? OFFSET ?`,
-        [userId, sort, Number(limit), offset]
-      );
-      res.status(200).json({ logs, page: Number(page), limit: Number(limit) });
-    } catch (error) {
-      console.error('Error fetching maintenance logs:', error);
-      res.status(500).json({ error: 'Failed to fetch maintenance logs' });
-    }
-  } else if (req.method === 'DELETE') {
-    const { id } = req.body;
-
-    try {
-      await query('DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?', [id, userId]);
-      res.status(200).json({ message: 'Maintenance log deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting maintenance log:', error);
-      res.status(500).json({ error: 'Failed to delete maintenance log' });
-    }
+  if (request.method === 'POST') {
+    return handlePost(request, env, userId);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env, userId);
+  } else if (request.method === 'DELETE') {
+    return handleDelete(request, env, userId);
   } else {
-    res.status(405).json({ error: 'Method not allowed' });
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
   }
 }
 
-export default authMiddleware(handler);
+async function handlePost(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { ph, ammonia, nitrite, nitrate }: { ph: number, ammonia: number, nitrite: number, nitrate: number } = await request.json();
+
+    await env.DB.prepare(
+      'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)'
+    ).bind(userId, ph, ammonia, nitrite, nitrate).run();
+
+    return NextResponse.json({ message: 'Maintenance log created successfully' }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to create maintenance log' }, { status: 500 });
+  }
+}
+
+async function handleGet(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const sort = searchParams.get('sort') || 'created_at';
+    const order = searchParams.get('order') || 'DESC';
+    const offset = (page - 1) * limit;
+
+    const logs = await env.DB.prepare(`
+      SELECT * FROM maintenance_logs 
+      WHERE user_id = ? 
+      ORDER BY ${sort} ${order} 
+      LIMIT ? OFFSET ?
+    `).bind(userId, limit, offset).all();
+
+    return NextResponse.json({ logs: logs.results, page, limit });
+  } catch (error) {
+    console.error('Error fetching maintenance logs:', error);
+    return NextResponse.json({ error: 'Failed to fetch maintenance logs' }, { status: 500 });
+  }
+}
+
+async function handleDelete(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { id }: { id: string } = await request.json();
+
+    await env.DB.prepare(
+      'DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?'
+    ).bind(id, userId).run();
+
+    return NextResponse.json({ message: 'Maintenance log deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to delete maintenance log' }, { status: 500 });
+  }
+}
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
+export const DELETE = authMiddleware(handler);
 
 ------------------
 // ./app/middleware.ts
-// app/middleware.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { verify } from 'jsonwebtoken';
+import { NextRequest, NextResponse } from 'next/server';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+import { verifyToken } from './utils/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-// Add paths that don't require authentication
 const PUBLIC_PATHS = [
   '/login',
   '/register',
@@ -1852,37 +1896,24 @@ const PUBLIC_PATHS = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths
   if (PUBLIC_PATHS.includes(pathname)) {
     return NextResponse.next();
   }
 
-  // Check for auth token
-  const token = request.cookies.get('auth-token')?.value;
+  const token = request.cookies.get('auth-token')?.value || request.headers.get('authorization')?.split(' ')[1];
 
   if (!token) {
-    // Redirect to login if accessing page
     if (!pathname.startsWith('/api/')) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
-    // Return 401 if accessing API
     return NextResponse.json({ 
       success: false, 
       error: 'Authentication required' 
     }, { status: 401 });
   }
 
-  try {
-    // Verify token
-    const decoded = verify(token, JWT_SECRET) as { userId: string };
-    const response = NextResponse.next();
-    
-    // Add user info to headers for API routes
-    response.headers.set('X-User-Id', decoded.userId);
-    
-    return response;
-  } catch (error) {
-    // Token is invalid
+  const payload = await verifyToken(token);
+  if (!payload) {
     if (!pathname.startsWith('/api/')) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
@@ -1891,22 +1922,55 @@ export async function middleware(request: NextRequest) {
       error: 'Invalid token' 
     }, { status: 401 });
   }
+
+  const response = NextResponse.next();
+  response.headers.set('X-User-Id', payload.userId.toString());
+  
+  return response;
 }
 
 export const config = {
   matcher: [
-    // Pages that require auth
     '/maintenance/:path*',
     '/parameters/:path*',
     '/equipment/:path*',
     '/inhabitants/:path*',
-    // API routes that require auth
     '/api/maintenance-logs/:path*',
     '/api/parameters/:path*',
     '/api/equipment/:path*',
     '/api/inhabitants/:path*'
   ]
 };
+
+export function authMiddleware(
+    handler: (
+      req: NextRequest,
+      env: CloudflareEnv
+    ) => Promise<NextResponse>
+  ) {
+    return async (
+      req: NextRequest,
+      env: CloudflareEnv
+    ): Promise<NextResponse> => {
+      const token = req.cookies.get('auth-token')?.value || req.headers.get('authorization')?.split(' ')[1];
+  
+      if (!token) {
+        return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      }
+  
+      const payload = await verifyToken(token);
+      if (!payload) {
+        return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+      }
+  
+      // Create a new request object with the user ID added to headers
+      const newRequest = new NextRequest(req);
+      newRequest.headers.set('X-User-Id', payload.userId.toString());
+  
+      return handler(newRequest, env);
+    };
+  }
+  
 
 ------------------
 // ./app/page.tsx
@@ -2345,7 +2409,7 @@ export default function HomePage() {
 }
 
 ------------------
-// ./app/types/cloudflare.d.ts
+// ./app/types/cloudflare.ts
 export interface D1Database {
   prepare: (query: string) => D1PreparedStatement;
   dump: () => Promise<ArrayBuffer>;
@@ -2469,39 +2533,67 @@ export const siteConfig = {
 
 ------------------
 // ./app/utils/auth.ts
-import { NextApiRequest, NextApiResponse, NextApiHandler } from 'next';
-import jwt from 'jsonwebtoken';
-import { getRequestContext, CloudflareEnv } from '../types/cloudflare.d';
+import { NextRequest, NextResponse } from 'next/server';
+import * as jose from 'jose';
+import { CloudflareEnv } from '../types/cloudflare';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-interface ExtendedNextApiRequest extends NextApiRequest {
+export interface ExtendedNextRequest extends NextRequest {
   userId?: number;
 }
 
-export const authMiddleware = (handler: NextApiHandler) => async (
-  req: ExtendedNextApiRequest,
-  res: NextApiResponse
-) => {
-  const token = req.headers.authorization?.split(' ')[1];
+export async function createToken(payload: any): Promise<string> {
+  const secret = new TextEncoder().encode(JWT_SECRET);
+  const token = await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('24h')
+    .sign(secret);
+  return token;
+}
 
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
+export async function verifyToken(token: string): Promise<any> {
+  const secret = new TextEncoder().encode(JWT_SECRET);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-    const ctx = getRequestContext();
-    req.userId = ctx.env.USER_ID = decoded.userId;
-    return handler(req, res);
+    const { payload } = await jose.jwtVerify(token, secret);
+    return payload;
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+    console.error('Token verification failed:', error);
+    return null;
   }
-};
+}
+
+type Handler = (request: NextRequest, env: CloudflareEnv) => Promise<NextResponse>;
+
+export function authMiddleware(handler: Handler) {
+  return async (request: NextRequest, env: CloudflareEnv): Promise<NextResponse> => {
+    const token = request.cookies.get('auth-token')?.value || request.headers.get('authorization')?.split(' ')[1];
+
+    if (!token) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const payload = await verifyToken(token);
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    // Create a new headers object with the user ID
+    const headers = new Headers(request.headers);
+    headers.set('X-User-Id', payload.userId.toString());
+
+    // Create a new request with the updated headers
+    const authenticatedRequest = new NextRequest(request, { headers });
+
+    return handler(authenticatedRequest, env);
+  };
+}
+
+
 
 ------------------
 // ./app/utils/db.ts
-import { D1Database, getRequestContext } from '../types/cloudflare.d';
+import { D1Database, getRequestContext } from '../types/cloudflare';
 
 let db: D1Database;
 
@@ -2520,6 +2612,35 @@ export async function query(
   const db = await getDB();
   const result = await db.prepare(sql).bind(params || []).first<unknown[]>();
   return result || [];
+}
+
+------------------
+// ./app/utils/mockAuth.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+
+export function mockAuthMiddleware(
+  handler: (
+    req: NextRequest,
+    env: CloudflareEnv
+  ) => Promise<NextResponse>
+) {
+  return async (
+    req: NextRequest,
+    env: CloudflareEnv
+  ): Promise<NextResponse> => {
+    // Mock user authentication
+    const mockUserId = '12345';
+    
+    // Create a new headers object
+    const headers = new Headers(req.headers);
+    headers.set('X-User-Id', mockUserId);
+
+    // Create a new request with the updated headers
+    const authenticatedRequest = new NextRequest(req, { headers });
+
+    return handler(authenticatedRequest, env);
+  };
 }
 
 ------------------
@@ -2655,6 +2776,7 @@ const config: Config = {
 };
 
 export default config;
+
 
 ------------------
 // ./wrangler.toml

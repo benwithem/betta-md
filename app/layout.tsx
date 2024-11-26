@@ -1,4 +1,3 @@
-// app/layout.tsx
 import '@mantine/core/styles.css';
 import './globals.css';
 import { MantineProvider, createTheme, ColorSchemeScript } from '@mantine/core';

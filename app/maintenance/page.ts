@@ -1,70 +1,76 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { query } from '../utils/db';
-import { getRequestContext } from '../types/cloudflare';
+import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from '../utils/auth';
+import { CloudflareEnv } from '../types/cloudflare';
 
-export const runtime = "edge";
+export const runtime = 'edge';
 
-type ExtendedNextApiRequest = NextApiRequest & {
-  body: {
-    ph: number;
-    ammonia: number;
-    nitrite: number;
-    nitrate: number;
-    id?: number;
-  };
-  query: {
-    page?: string;
-    limit?: string;
-    sort?: string;
-    order?: string;
-  };
-};
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  const userId = request.headers.get('X-User-Id');
 
-async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
-  const ctx = getRequestContext();
-  const userId = process.env.USER_ID;
-
-  if (req.method === 'POST') {
-    const { ph, ammonia, nitrite, nitrate } = req.body;
-
-    try {
-      await query(
-        'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)',
-        [userId, ph, ammonia, nitrite, nitrate]
-      );
-      res.status(201).json({ message: 'Maintenance log created successfully' });
-    } catch (error) {
-      console.error('Error creating maintenance log:', error);
-      res.status(500).json({ error: 'Failed to create maintenance log' });
-    }
-  } else if (req.method === 'GET') {
-    const { page = '1', limit = '10', sort = 'created_at', order = 'DESC' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
-
-    try {
-      const logs = await query(
-        `SELECT * FROM maintenance_logs WHERE user_id = ? ORDER BY ?? ${order} LIMIT ? OFFSET ?`,
-        [userId, sort, Number(limit), offset]
-      );
-      res.status(200).json({ logs, page: Number(page), limit: Number(limit) });
-    } catch (error) {
-      console.error('Error fetching maintenance logs:', error);
-      res.status(500).json({ error: 'Failed to fetch maintenance logs' });
-    }
-  } else if (req.method === 'DELETE') {
-    const { id } = req.body;
-
-    try {
-      await query('DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?', [id, userId]);
-      res.status(200).json({ message: 'Maintenance log deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting maintenance log:', error);
-      res.status(500).json({ error: 'Failed to delete maintenance log' });
-    }
+  if (request.method === 'POST') {
+    return handlePost(request, env, userId);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env, userId);
+  } else if (request.method === 'DELETE') {
+    return handleDelete(request, env, userId);
   } else {
-    res.status(405).json({ error: 'Method not allowed' });
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
   }
 }
 
-export default authMiddleware(handler);
+async function handlePost(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { ph, ammonia, nitrite, nitrate }: { ph: number, ammonia: number, nitrite: number, nitrate: number } = await request.json();
+
+    await env.DB.prepare(
+      'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)'
+    ).bind(userId, ph, ammonia, nitrite, nitrate).run();
+
+    return NextResponse.json({ message: 'Maintenance log created successfully' }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to create maintenance log' }, { status: 500 });
+  }
+}
+
+async function handleGet(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const sort = searchParams.get('sort') || 'created_at';
+    const order = searchParams.get('order') || 'DESC';
+    const offset = (page - 1) * limit;
+
+    const logs = await env.DB.prepare(`
+      SELECT * FROM maintenance_logs 
+      WHERE user_id = ? 
+      ORDER BY ${sort} ${order} 
+      LIMIT ? OFFSET ?
+    `).bind(userId, limit, offset).all();
+
+    return NextResponse.json({ logs: logs.results, page, limit });
+  } catch (error) {
+    console.error('Error fetching maintenance logs:', error);
+    return NextResponse.json({ error: 'Failed to fetch maintenance logs' }, { status: 500 });
+  }
+}
+
+async function handleDelete(request: NextRequest, env: CloudflareEnv, userId: string | null): Promise<NextResponse> {
+  try {
+    const { id }: { id: string } = await request.json();
+
+    await env.DB.prepare(
+      'DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?'
+    ).bind(id, userId).run();
+
+    return NextResponse.json({ message: 'Maintenance log deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting maintenance log:', error);
+    return NextResponse.json({ error: 'Failed to delete maintenance log' }, { status: 500 });
+  }
+}
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
+export const DELETE = authMiddleware(handler);

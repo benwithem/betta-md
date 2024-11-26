@@ -1,9 +1,7 @@
-import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
-export const runtime = 'edge';
 
-// Parameter ranges for Betta fish
 const PARAMETER_RANGES = {
   ph: { min: 6.5, max: 7.5, optimal: 7.0 },
   temperature: { min: 76, max: 82, optimal: 78 },
@@ -14,32 +12,33 @@ const PARAMETER_RANGES = {
   kh: { min: 3, max: 8, optimal: 5 }
 };
 
-export async function POST(request: Request) {
+async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
+  if (request.method === 'POST') {
+    return handlePost(request, env);
+  } else if (request.method === 'GET') {
+    return handleGet(request, env);
+  } else {
+    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
+
+async function handlePost(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { 
       ph, temperature, ammonia, nitrite, nitrate, gh, kh 
-    }: { 
+    } = await request.json() as { 
       ph: number, temperature: number, ammonia: number, nitrite: number, nitrate: number, gh: number, kh: number 
-    } = await request.json();
+    };
 
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
-
-    // Validate parameters
     const validation = validateParameters({
       ph, temperature, ammonia, nitrite, nitrate, gh, kh
     });
 
     if (!validation.valid) {
-      return NextResponse.json({ 
-        success: false, 
-        error: validation.errors 
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: validation.errors }, { status: 400 });
     }
 
-    // Store parameters
-    await db.prepare(`
+    await env.DB.prepare(`
       INSERT INTO water_parameters 
       (ph, temperature, ammonia, nitrite, nitrate, gh, kh) 
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -51,27 +50,20 @@ export async function POST(request: Request) {
       recommendations: generateRecommendations({
         ph, temperature, ammonia, nitrite, nitrate, gh, kh
       })
-    });
+    }, { status: 201 });
 
   } catch (error) {
     console.error('Parameters error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to record parameters' 
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to record parameters' }, { status: 500 });
   }
 }
 
-export async function GET(request: Request) {
+async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '7');
-    
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
-    const db = env.DB;
 
-    const results = await db.prepare(`
+    const results = await env.DB.prepare(`
       SELECT * FROM water_parameters 
       WHERE created_at >= datetime('now', '-' || ? || ' days')
       ORDER BY created_at DESC
@@ -85,10 +77,7 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('Parameters fetch error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch parameters' 
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to fetch parameters' }, { status: 500 });
   }
 }
 
@@ -146,3 +135,6 @@ function generateRecommendations(params: any) {
 
   return recommendations;
 }
+
+export const GET = authMiddleware(handler);
+export const POST = authMiddleware(handler);
