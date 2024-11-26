@@ -31,6 +31,11 @@ export default function AquariumTracker() {
   //const [sort, setSort] = useState('created_at');
   //const [order, setOrder] = useState('DESC');
 
+  const [page] = useState(1);
+  const [limit] = useState(10);
+  const [sort] = useState('created_at');
+  const [order] = useState('DESC');
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const token = localStorage.getItem('token');
