@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Menu, Text } from '@mantine/core';
+import { Avatar, Menu } from '@mantine/core';
 import { 
   IconUser, 
   IconSettings, 

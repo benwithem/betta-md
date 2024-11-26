@@ -16,8 +16,7 @@ import {
 } from '@mantine/core';
 import { 
   IconFish, 
-  IconDroplet, 
-  IconThermometer,
+  IconDroplet,
   IconFlask,
   IconChartBar 
 } from '@tabler/icons-react';

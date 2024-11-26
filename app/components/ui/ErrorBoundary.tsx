@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, Container, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Container, Stack } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 
 interface ErrorBoundaryProps {
@@ -31,3 +31,4 @@ export function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
       </Stack>
     </Container>
   );
+}
