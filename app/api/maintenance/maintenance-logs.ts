@@ -30,7 +30,6 @@ type ExtendedNextApiRequest = NextApiRequest & {
 };
 
 async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
-  console.log('Incoming request:', req.method, req.url, req.body, req.query);
   const ctx = getRequestContext();
   const userId = ctx.env.USER_ID;
 
@@ -38,7 +37,6 @@ async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
     const { ph, ammonia, nitrite, nitrate } = req.body;
 
     try {
-      console.log('Attempting to create maintenance log:', { ph, ammonia, nitrite, nitrate, userId });
       await query(
         'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)',
         [userId, ph, ammonia, nitrite, nitrate]
@@ -53,7 +51,6 @@ async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
     const offset = (Number(page) - 1) * Number(limit);
 
     try {
-      console.log('Attempting to fetch maintenance logs:', { userId, page, limit, sort, order });
       const logs = await query(
         `SELECT * FROM maintenance_logs WHERE user_id = ? ORDER BY ?? ${order} LIMIT ? OFFSET ?`,
         [userId, sort, Number(limit), offset]
@@ -67,7 +64,6 @@ async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
     const { id } = req.body;
 
     try {
-      console.log('Attempting to delete maintenance log:', { id, userId });
       await query('DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?', [id, userId]);
       res.status(200).json({ message: 'Maintenance log deleted successfully' });
     } catch (error) {

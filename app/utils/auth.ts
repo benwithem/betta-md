@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse, NextApiHandler } from 'next';
 import jwt from 'jsonwebtoken';
-import { getRequestContext } from '../types/cloudflare.d';
+import { getRequestContext, CloudflareEnv } from '../types/cloudflare.d';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 

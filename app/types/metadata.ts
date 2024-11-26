@@ -7,7 +7,7 @@ export const siteConfig = {
     ogImage: 'https://your-domain.com/og.jpg',
     links: {
       twitter: 'https://twitter.com/yourusername',
-      github: 'https://github.com/yourusername/betta-md',
+      github: 'https://github.com/yourusername/betta-md-app',
     },
   } as const;
   
