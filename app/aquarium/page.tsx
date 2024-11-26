@@ -31,41 +31,43 @@ export default function AquariumTracker() {
   //const [sort, setSort] = useState('created_at');
   //const [order, setOrder] = useState('DESC');
 
-  const [page] = useState(1);
+  const [page,] = useState(1);
   const [limit] = useState(10);
   const [sort] = useState('created_at');
   const [order] = useState('DESC');
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-
+    
     try {
-      const response = await fetch(
-        `/api/maintenance-logs?page=${page}&limit=${limit}&sort=${sort}&order=${order}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ ph, ammonia, nitrite, nitrate }),
-        }
-      );
-
+      const response = await fetch('/api/maintenance-logs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ph: parseFloat(ph as string),
+          ammonia: parseFloat(ammonia as string),
+          nitrite: parseFloat(nitrite as string),
+          nitrate: parseFloat(nitrate as string),
+        }),
+      });
+  
+      const data = await response.json();
+  
       if (response.ok) {
-        // Clear form and show success message
         setPh('');
         setAmmonia('');
         setNitrite('');
         setNitrate('');
         alert('Maintenance log created successfully');
       } else {
-        // Show error message
-        alert('Failed to create maintenance log');
+        const errorData = data as { error?: string };
+        alert(`Error: ${errorData.error || 'Failed to create maintenance log'}`);
       }
     } catch (error) {
-      console.error('Error creating maintenance log:', error);
+      console.error('Error submitting form:', error);
+      alert('Failed to submit form. Please try again.');
     }
   }
 

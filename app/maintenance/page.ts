@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { query } from '../../utils/db';
-import { getRequestContext } from '../../types/cloudflare.d';
-import { authMiddleware } from '../../utils/auth';
+import { query } from '../utils/db';
+import { getRequestContext } from '../types/cloudflare';
+import { authMiddleware } from '../utils/auth';
 
 export const config = {
   runtime: 'edge',
@@ -31,7 +31,7 @@ type ExtendedNextApiRequest = NextApiRequest & {
 
 async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
   const ctx = getRequestContext();
-  const userId = ctx.env.USER_ID;
+  const userId = process.env.USER_ID;
 
   if (req.method === 'POST') {
     const { ph, ammonia, nitrite, nitrate } = req.body;

@@ -1,0 +1,2686 @@
+Project Structure:
+=================
+
+./
+|-- README.md
+|-- app/
+|   |-- api/
+|   |   |-- auth/
+|   |   |   |-- login/
+|   |   |   |-- login.ts
+|   |   |   |-- logout/
+|   |   |   |-- register/
+|   |   |   |-- signup.ts
+|   |   |   |-- verify/
+|   |   |-- equipment/
+|   |   |   |-- route.ts
+|   |   |-- inhabitants/
+|   |   |   |-- route.ts
+|   |   |-- knowledge/
+|   |   |-- maintenance-logs/
+|   |   |   |-- route.ts
+|   |   |-- parameters/
+|   |   |   |-- route.ts
+|   |   |-- route.ts
+|   |-- aquarium/
+|   |   |-- page.tsx
+|   |-- auth/
+|   |   |-- layout.tsx
+|   |   |-- login/
+|   |   |   |-- page.tsx
+|   |   |-- register/
+|   |       |-- page.tsx
+|   |-- components/
+|   |   |-- auth/
+|   |   |   |-- AuthProvider.tsx
+|   |   |   |-- LoginForm.tsx
+|   |   |   |-- RegisterForm.tsx
+|   |   |-- equipment/
+|   |   |   |-- EquipmentCard.tsx
+|   |   |   |-- EquipmentForm.tsx
+|   |   |-- inhabitants/
+|   |   |   |-- InhabitantCard.tsx
+|   |   |   |-- InhabitantForm.tsx
+|   |   |-- layout/
+|   |   |   |-- Header.tsx
+|   |   |   |-- MainLayout.tsx
+|   |   |   |-- Navbar.tsx
+|   |   |   |-- UserMenu.tsx
+|   |   |-- maintinence/
+|   |   |   |-- MaintenanceForm.tsx
+|   |   |   |-- MaintenanceLogCard.tsx
+|   |   |-- parameters/
+|   |   |   |-- ParameterForm.tsx
+|   |   |   |-- ParameterGraph.tsx
+|   |   |   |-- WaterParameterCard.tsx
+|   |   |-- shared/
+|   |       |-- Card.tsx
+|   |       |-- ErrorBoundary.tsx
+|   |       |-- LoadingSpinner.tsx
+|   |       |-- ThemeToggle.tsx
+|   |-- equipment/
+|   |-- error.tsx
+|   |-- favicon.ico
+|   |-- globals.css
+|   |-- layout.tsx
+|   |-- loading.tsx
+|   |-- maintenance/
+|   |   |-- page.ts
+|   |-- middleware.ts
+|   |-- page.tsx
+|   |-- parameters/
+|   |   |-- page.tsx
+|   |-- tests/
+|   |   |-- page.tsx
+|   |-- types/
+|   |   |-- cloudflare.d.ts
+|   |   |-- metadata.ts
+|   |-- utils/
+|       |-- auth.ts
+|       |-- db.ts
+|-- comps.txt
+|-- env.d.ts
+|-- generate-master-file.sh*
+|-- masterfile.txt
+|-- move-files.sh*
+|-- next-env.d.ts
+|-- next.config.mjs
+|-- package-lock.json
+|-- package.json
+|-- paste.txt
+|-- postcss.config.mjs
+|-- public/
+|   |-- next.svg
+|   |-- vercel.svg
+|-- schema.sql
+|-- script_log.txt
+|-- split-files.sh*
+|-- tailwind.config.js
+|-- tailwind.config.ts
+|-- tsconfig.json
+|-- wrangler.toml
+
+32 directories, 66 files
+
+File Contents:
+=============
+
+------------------
+// ./app/api/auth/login.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { query } from '../../utils/db';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'POST') {
+    const { email, password } = req.body;
+
+    try {
+      const result = await query('SELECT * FROM users WHERE email = ?', [email]);
+      const user: { id: number; email: string; password: string } = result[0] as { id: number; email: string; password: string };
+
+      if (user && (await bcrypt.compare(password, user.password))) {
+        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+        res.status(200).json({ token });
+      } else {
+        res.status(401).json({ error: 'Invalid email or password' });
+      }
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to login' });
+    }
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}
+
+------------------
+// ./app/api/auth/login/route.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+import { sign, verify } from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { email, password } = await request.json() as { email: string, password: string };
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const user = await db.prepare(
+      'SELECT id, email FROM users WHERE email = ? AND password_hash = ?'
+    ).bind(email, password).first() as { id: number, email: string } | null;
+
+    if (!user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid credentials' 
+      }, { status: 401 });
+    }
+
+    const token = sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
+
+    return NextResponse.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email }
+    }, {
+      headers: {
+        'Set-Cookie': `auth-token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Authentication failed' 
+    }, { status: 500 });
+  }
+}
+
+// app/api/auth/register/route.ts
+export async function registerPOST(request: NextRequest) {
+  try {
+    const { email, password } = await request.json() as { email: string, password: string };
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Check if user exists
+    const existing = await db.prepare(
+      'SELECT id FROM users WHERE email = ?'
+    ).bind(email).first();
+
+    if (existing) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Email already registered' 
+      }, { status: 400 });
+    }
+
+    // Create new user
+    const result = await db.prepare(
+      'INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id'
+    ).bind(email, password).first() as { id: number };
+
+    const token = sign({ userId: result.id }, JWT_SECRET, { expiresIn: '24h' });
+
+    return NextResponse.json({
+      success: true,
+      token,
+      user: { id: result.id, email }
+    }, {
+      headers: {
+        'Set-Cookie': `auth-token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`
+      }
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Registration failed' 
+    }, { status: 500 });
+  }
+}
+
+// app/api/auth/verify/route.ts
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.cookies.get('auth-token')?.value;
+
+    if (!token) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'No token provided' 
+      }, { status: 401 });
+    }
+
+    const decoded = verify(token, JWT_SECRET) as { userId: number };
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const user = await db.prepare(
+      'SELECT id, email FROM users WHERE id = ?'
+    ).bind(decoded.userId).first() as { id: number, email: string } | null;
+
+    if (!user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User not found' 
+      }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: { id: user.id, email: user.email }
+    });
+
+  } catch (error) {
+    console.error('Token verification error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Invalid token' 
+    }, { status: 401 });
+  }
+}
+
+------------------
+// ./app/api/auth/logout/route.ts
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/api/auth/register/route.ts
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/api/auth/signup.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import bcrypt from 'bcrypt';
+import { query } from '../../utils/db';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'POST') {
+    const { email, password } = req.body;
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    try {
+      await query(
+        'INSERT INTO users (email, password) VALUES (?, ?)',
+        [email, hashedPassword]
+      );
+      res.status(201).json({ message: 'User created successfully' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}
+
+------------------
+// ./app/api/auth/verify/route.ts
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/api/equipment/route.ts
+import { NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+
+export const runtime = 'edge';
+
+type EquipmentType = 'filter_media' | 'heater' | 'water_pump' | 'air_pump';
+
+const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; maintenance: string }> = {
+  'filter_media': { 
+    interval_days: 30,
+    maintenance: 'Clean or replace filter media'
+  },
+  'heater': { 
+    interval_days: 90,
+    maintenance: 'Check temperature calibration'
+  },
+  'water_pump': { 
+    interval_days: 90,
+    maintenance: 'Clean impeller and check flow rate'
+  },
+  'air_pump': { 
+    interval_days: 180,
+    maintenance: 'Check air stone and tubing'
+  }
+};
+
+export async function POST(request: Request) {
+  try {
+    interface EquipmentRequestBody {
+      equipment_type: string;
+      brand: string;
+      model: string;
+      purchase_date: string;
+      last_maintenance: string;
+      notes: string;
+    }
+
+    const { 
+      equipment_type,
+      brand,
+      model,
+      purchase_date,
+      last_maintenance,
+      notes 
+    } = await request.json() as EquipmentRequestBody;
+
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Add equipment record
+    await db.prepare(`
+      INSERT INTO equipment 
+      (equipment_type, brand, model, purchase_date, last_maintenance, notes) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      equipment_type,
+      brand,
+      model,
+      purchase_date,
+      last_maintenance,
+      notes
+    ).run();
+
+    return NextResponse.json({ 
+      maintenance_schedule: MAINTENANCE_SCHEDULES[equipment_type as EquipmentType],
+      message: 'Equipment added successfully'
+    });
+
+  } catch (error) {
+    console.error('Equipment error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to add equipment' 
+    }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  try {
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Get all equipment and calculate maintenance due dates
+    const results = await db.prepare(`
+      SELECT 
+        *, 
+        datetime(last_maintenance, '+30 days') as next_maintenance_due
+      FROM equipment 
+      ORDER BY next_maintenance_due ASC
+    `).all();
+
+    return NextResponse.json({ 
+      success: true,
+      data: results.results,
+      maintenance_schedules: MAINTENANCE_SCHEDULES
+    });
+
+  } catch (error) {
+    console.error('Equipment fetch error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to fetch equipment' 
+    }, { status: 500 });
+  }
+}
+
+------------------
+// ./app/api/inhabitants/route.ts
+import { NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+
+export const runtime = 'edge';
+
+type Species = 'Mystery Snail' | 'Ghost Shrimp' | 'Nerite Snail';
+
+const BETTA_COMPATIBLE_SPECIES: Record<Species, { max_count: number; current: number }> = {
+  'Mystery Snail': { max_count: 4, current: 3 },
+  'Ghost Shrimp': { max_count: 6, current: 4 },
+  'Nerite Snail': { max_count: 2, current: 2 }
+};
+
+export async function POST(request: Request) {
+  try {
+    const { 
+      species, 
+      count, 
+      notes,
+      date_added
+    }: { 
+      species: Species; 
+      count: number; 
+      notes: string; 
+      date_added: string 
+    } = await request.json();
+
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Validate compatibility
+    if (!BETTA_COMPATIBLE_SPECIES[species]) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Species not compatible with betta fish' 
+      }, { status: 400 });
+    }
+
+    // Check tank capacity
+    const currentCount = BETTA_COMPATIBLE_SPECIES[species].current;
+    const maxCount = BETTA_COMPATIBLE_SPECIES[species].max_count;
+    
+    if ((currentCount + count) > maxCount) {
+      return NextResponse.json({ 
+        success: false, 
+        error: `Maximum recommended count for ${species} is ${maxCount}` 
+      }, { status: 400 });
+    }
+
+    // Add inhabitant record
+    await db.prepare(`
+      INSERT INTO inhabitants 
+      (species, count, notes, date_added) 
+      VALUES (?, ?, ?, ?)
+    `).bind(species, count, notes, date_added).run();
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Inhabitant added successfully'
+    });
+
+  } catch (error) {
+    console.error('Inhabitants error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to add inhabitant' 
+    }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  try {
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const results = await db.prepare(`
+      SELECT * FROM inhabitants 
+      ORDER BY date_added DESC
+    `).all();
+
+    return NextResponse.json({ 
+      success: true,
+      data: results.results,
+      compatible_species: BETTA_COMPATIBLE_SPECIES
+    });
+
+  } catch (error) {
+    console.error('Inhabitants fetch error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to fetch inhabitants' 
+    }, { status: 500 });
+  }
+}
+
+------------------
+// ./app/api/maintenance-logs/route.ts
+// app/api/maintenance-logs/route.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { 
+  CloudflareEnv, 
+  MaintenanceLog 
+} from '../../types/cloudflare.d';
+
+export const runtime = 'edge';
+
+type MaintenanceLogInput = Omit<MaintenanceLog, 'id' | 'created_at'>;
+
+export async function POST(request: NextRequest) {
+  try {
+    const data = await request.json() as MaintenanceLogInput;
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Validate required fields
+    if (!data.maintenance_type) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Maintenance type is required' 
+      }, { 
+        status: 400 
+      });
+    }
+
+    // Build dynamic query based on provided fields
+    const fields = Object.keys(data).filter(key => data[key] !== undefined);
+    const values = fields.map(key => data[key]);
+    const query = `
+      INSERT INTO maintenance_logs (${fields.join(', ')})
+      VALUES (${fields.map(() => '?').join(', ')})
+    `;
+
+    await db.prepare(query).bind(...values).run();
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Maintenance log created successfully'
+    });
+
+  } catch (error) {
+    console.error('Error in maintenance log POST:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to create maintenance log' 
+    }, { 
+      status: 500 
+    });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const offset = (page - 1) * limit;
+
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const results = await db.prepare(`
+      SELECT * FROM maintenance_logs 
+      ORDER BY created_at DESC 
+      LIMIT ? OFFSET ?
+    `).bind(limit, offset).all<MaintenanceLog>();
+
+    return NextResponse.json({ 
+      success: true,
+      data: results.results,
+      pagination: {
+        page,
+        limit,
+        total: results.results?.length || 0
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in maintenance log GET:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to fetch maintenance logs' 
+    }, { 
+      status: 500 
+    });
+  }
+}
+
+------------------
+// ./app/api/parameters/route.ts
+import { NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { CloudflareEnv } from '@/app/types/cloudflare';
+export const runtime = 'edge';
+
+// Parameter ranges for Betta fish
+const PARAMETER_RANGES = {
+  ph: { min: 6.5, max: 7.5, optimal: 7.0 },
+  temperature: { min: 76, max: 82, optimal: 78 },
+  ammonia: { max: 0.25, optimal: 0 },
+  nitrite: { max: 0.25, optimal: 0 },
+  nitrate: { max: 20, optimal: 5 },
+  gh: { min: 3, max: 12, optimal: 7 },
+  kh: { min: 3, max: 8, optimal: 5 }
+};
+
+export async function POST(request: Request) {
+  try {
+    const { 
+      ph, temperature, ammonia, nitrite, nitrate, gh, kh 
+    }: { 
+      ph: number, temperature: number, ammonia: number, nitrite: number, nitrate: number, gh: number, kh: number 
+    } = await request.json();
+
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    // Validate parameters
+    const validation = validateParameters({
+      ph, temperature, ammonia, nitrite, nitrate, gh, kh
+    });
+
+    if (!validation.valid) {
+      return NextResponse.json({ 
+        success: false, 
+        error: validation.errors 
+      }, { status: 400 });
+    }
+
+    // Store parameters
+    await db.prepare(`
+      INSERT INTO water_parameters 
+      (ph, temperature, ammonia, nitrite, nitrate, gh, kh) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(ph, temperature, ammonia, nitrite, nitrate, gh, kh).run();
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Parameters recorded successfully',
+      recommendations: generateRecommendations({
+        ph, temperature, ammonia, nitrite, nitrate, gh, kh
+      })
+    });
+
+  } catch (error) {
+    console.error('Parameters error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to record parameters' 
+    }, { status: 500 });
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const days = parseInt(searchParams.get('days') || '7');
+    
+    const ctx = getRequestContext();
+    const env = ctx.env as CloudflareEnv;
+    const db = env.DB;
+
+    const results = await db.prepare(`
+      SELECT * FROM water_parameters 
+      WHERE created_at >= datetime('now', '-' || ? || ' days')
+      ORDER BY created_at DESC
+    `).bind(days).all();
+
+    return NextResponse.json({ 
+      success: true,
+      data: results.results,
+      ranges: PARAMETER_RANGES
+    });
+
+  } catch (error) {
+    console.error('Parameters fetch error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to fetch parameters' 
+    }, { status: 500 });
+  }
+}
+
+function validateParameters(params: any) {
+  const errors = [];
+
+  if (params.ph < PARAMETER_RANGES.ph.min || params.ph > PARAMETER_RANGES.ph.max) {
+    errors.push(`pH should be between ${PARAMETER_RANGES.ph.min} and ${PARAMETER_RANGES.ph.max}`);
+  }
+
+  if (params.ammonia > PARAMETER_RANGES.ammonia.max) {
+    errors.push(`Ammonia should be below ${PARAMETER_RANGES.ammonia.max}`);
+  }
+
+  if (params.nitrite > PARAMETER_RANGES.nitrite.max) {
+    errors.push(`Nitrite should be below ${PARAMETER_RANGES.nitrite.max}`);
+  }
+
+  if (params.nitrate > PARAMETER_RANGES.nitrate.max) {
+    errors.push(`Nitrate should be below ${PARAMETER_RANGES.nitrate.max}`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+function generateRecommendations(params: any) {
+  const recommendations = [];
+
+  if (params.ammonia > 0) {
+    recommendations.push({
+      level: 'critical',
+      message: 'Perform immediate water change to reduce ammonia levels',
+      action: 'water_change'
+    });
+  }
+
+  if (params.nitrite > 0) {
+    recommendations.push({
+      level: 'critical',
+      message: 'Perform water change and check filter maintenance',
+      action: 'filter_maintenance'
+    });
+  }
+
+  if (params.ph < 6.8 || params.ph > 7.2) {
+    recommendations.push({
+      level: 'warning',
+      message: 'pH levels are outside optimal range for bettas',
+      action: 'adjust_ph'
+    });
+  }
+
+  return recommendations;
+}
+
+------------------
+// ./app/api/route.ts
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+
+export const runtime = 'edge';
+
+export async function GET(_request: NextRequest) {
+  try {
+    const responseText = 'Hello World';
+
+    return NextResponse.json({ 
+      message: responseText,
+      success: true,
+      timestamp: new Date().toISOString()
+    }, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in GET request:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Internal Server Error'
+    }, { 
+      status: 500 
+    });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    
+    return NextResponse.json({ 
+      message: 'POST request received',
+      data: body,
+      success: true 
+    });
+
+  } catch (error) {
+    console.error('Error in POST request:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Internal Server Error' 
+    }, { 
+      status: 500 
+    });
+  }
+}
+
+// If you need Cloudflare bindings later, you can add this:
+/*
+import { getRequestContext } from '@cloudflare/next-on-pages';
+
+// Inside your function:
+const ctx = getRequestContext();
+const myKv = ctx.env.MY_KV_NAMESPACE;
+*/
+
+------------------
+// ./app/aquarium/page.tsx
+'use client';
+
+import { 
+  Container, 
+  Stack, 
+  Card, 
+  Group, 
+  Title, 
+  Text, 
+  Tooltip, 
+  ActionIcon, 
+  Button, 
+  Paper, 
+  RingProgress, 
+  SimpleGrid,
+  TextInput,
+  NumberInput
+} from '@mantine/core';
+import { IconRefresh, IconPlus, IconDroplet, IconThermometer, IconTestPipe2Filled, IconAlertTriangle } from '@tabler/icons-react';
+import { MainLayout } from '../components/layout/MainLayout';
+import { WaterParameterCard } from '../components/parameters/WaterParameterCard';
+import { useState } from 'react';
+
+export default function AquariumTracker() {
+  const [ph, setPh] = useState<string | number>('');
+  const [ammonia, setAmmonia] = useState<string | number>('');
+  const [nitrite, setNitrite] = useState<string | number>('');
+  const [nitrate, setNitrate] = useState<string | number>('');
+  //const [page, setPage] = useState(1);
+  //const [limit, setLimit] = useState(10);
+  //const [sort, setSort] = useState('created_at');
+  //const [order, setOrder] = useState('DESC');
+
+  const [page,] = useState(1);
+  const [limit] = useState(10);
+  const [sort] = useState('created_at');
+  const [order] = useState('DESC');
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    
+    try {
+      const response = await fetch('/api/maintenance-logs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ph: parseFloat(ph as string),
+          ammonia: parseFloat(ammonia as string),
+          nitrite: parseFloat(nitrite as string),
+          nitrate: parseFloat(nitrate as string),
+        }),
+      });
+  
+      const data = await response.json();
+  
+      if (response.ok) {
+        setPh('');
+        setAmmonia('');
+        setNitrite('');
+        setNitrate('');
+        alert('Maintenance log created successfully');
+      } else {
+        const errorData = data as { error?: string };
+        alert(`Error: ${errorData.error || 'Failed to create maintenance log'}`);
+      }
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      alert('Failed to submit form. Please try again.');
+    }
+  }
+
+  return (
+    <MainLayout>
+      <Container size="lg" py="xl">
+        <Stack gap="xl">
+          {/* Header Section */}
+          <Card shadow="sm" p="lg" radius="lg" withBorder>
+            <Group justify="space-between" mb="lg">
+              <div>
+                <Title order={2} c="blue.7" mb="xs">Aquarium Tracker</Title>
+                <Text c="dimmed" size="sm">
+                  Track your aquarium parameters and get dosing recommendations
+                </Text>
+              </div>
+              <Group>
+                <Tooltip label="Refresh readings">
+                  <ActionIcon variant="light" color="blue" size="lg" radius="md">
+                    <IconRefresh size={20} />
+                  </ActionIcon>
+                </Tooltip>
+                <Button 
+                  variant="gradient"
+                  gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                  leftSection={<IconPlus size={16} />}
+                  radius="md"
+                >
+                  Add New Log
+                </Button>
+              </Group>
+            </Group>
+
+            {/* Water Quality Overview */}
+            <Paper bg="blue.0" p="md" radius="md" mb="lg">
+              <Group align="flex-start">
+                <RingProgress
+                  size={80}
+                  thickness={8}
+                  roundCaps
+                  sections={[{ value: 87, color: 'blue' }]}
+                  label={
+                    <Text ta="center" size="xs" fw={700}>
+                      87%
+                    </Text>
+                  }
+                />
+                <div>
+                  <Text fw={500} mb={5}>Water Quality Score</Text>
+                  <Text size="sm" c="dimmed">
+                    Your aquarium is in good condition. pH levels could use some attention.
+                  </Text>
+                </div>
+              </Group>
+            </Paper>
+
+            {/* Stats Cards */}
+            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+              <WaterParameterCard 
+                icon={IconDroplet}
+                label="Last Water Change"
+                value="3 days ago"
+                prevValue="7 days ago"
+                color="blue"
+                status="good"
+              />
+              <WaterParameterCard 
+                icon={IconThermometer}
+                label="Temperature"
+                value="78.5°F"
+                prevValue="77.8°F"
+                color="orange"
+                status="warning"
+              />
+              <WaterParameterCard 
+                icon={IconTestPipe2Filled}
+                label="pH Level"
+                value="7.2"
+                prevValue="7.0"
+                color="violet"
+                status="good"
+              />
+            </SimpleGrid>
+          </Card>
+
+          {/* Maintenance Log Form */}
+          <Card shadow="sm" p="lg" radius="lg" withBorder>
+            <Title order={3} mb="lg">Add Maintenance Log</Title>
+            <form onSubmit={handleSubmit}>
+              <TextInput
+                label="pH"
+                placeholder="Enter pH value"
+                value={ph}
+                onChange={(e) => setPh(e.target.value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Ammonia"
+                placeholder="Enter ammonia value"
+                step={0.01}
+                value={ammonia}
+                onChange={(value: string | number) => setAmmonia(value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Nitrite"
+                placeholder="Enter nitrite value"
+                step={0.01}
+                value={nitrite}
+                onChange={(value: string | number) => setNitrite(value)}
+                required
+                mb="md"
+              />
+              <NumberInput
+                label="Nitrate"
+                placeholder="Enter nitrate value"
+                step={0.01}
+                value={nitrate}
+                onChange={(value: string | number) => setNitrate(value)}
+                required
+                mb="md"
+              />
+              <Button type="submit">Submit</Button>
+            </form>
+          </Card>
+
+          {/* Recent Logs Section */}
+          <Card shadow="sm" p="lg" radius="lg" withBorder>
+            <Title order={3} mb="lg">Recent Logs</Title>
+            <Paper py="xl" px="md" bg="gray.0" radius="md">
+              <Stack align="center" gap="md">
+                <IconAlertTriangle size={40} color="var(--mantine-color-gray-5)" />
+                <Text c="dimmed" ta="center">
+                  No logs recorded yet. Add your first water parameter log to start tracking.
+                </Text>
+                <Button variant="light" color="blue">
+                  Create First Log
+                </Button>
+              </Stack>
+            </Paper>
+          </Card>
+        </Stack>
+      </Container>
+    </MainLayout>
+  );
+}
+
+------------------
+// ./app/auth/layout.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/auth/login/page.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/auth/register/page.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/auth/AuthProvider.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/auth/LoginForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/auth/RegisterForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/equipment/EquipmentCard.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/equipment/EquipmentForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/inhabitants/InhabitantCard.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/inhabitants/InhabitantForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/layout/Header.tsx
+'use client';
+
+import { 
+  Group, 
+  Burger, 
+  UnstyledButton, 
+  ThemeIcon, 
+  Text,
+  AppShell
+} from '@mantine/core';
+import { IconFish } from '@tabler/icons-react';
+import Link from 'next/link';
+import { UserMenu } from './UserMenu';
+import { ThemeToggle } from '../ui/ThemeToggle';
+
+interface HeaderProps {
+  opened: boolean;
+  toggle: () => void;
+}
+
+export function Header({ opened, toggle }: HeaderProps) {
+  return (
+    <AppShell.Header style={{
+      background: 'linear-gradient(135deg, var(--mantine-color-blue-6) 0%, var(--mantine-color-cyan-6) 100%)',
+      borderBottom: 'none'
+    }}>
+      <Group h="100%" px="md" justify="space-between">
+        <Group>
+          <Burger
+            opened={opened}
+            onClick={toggle}
+            hiddenFrom="sm"
+            size="sm"
+            color="white"
+          />
+          <UnstyledButton component={Link} href="/">
+            <Group>
+              <ThemeIcon 
+                size="lg" 
+                variant="gradient" 
+                gradient={{ from: 'blue', to: 'cyan' }}
+                style={{ border: '2px solid white' }}
+              >
+                <IconFish size={20} />
+              </ThemeIcon>
+              <Text fw={700} size="lg" c="white">
+                Betta-MD
+              </Text>
+            </Group>
+          </UnstyledButton>
+        </Group>
+
+        <Group>
+          <ThemeToggle />
+          <UserMenu />
+        </Group>
+      </Group>
+    </AppShell.Header>
+  );
+}
+
+
+
+------------------
+// ./app/components/layout/MainLayout.tsx
+'use client';
+
+import { 
+  AppShell, 
+  Box
+} from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
+import { usePathname } from 'next/navigation';
+import { Header } from './Header';
+import { Navbar } from './Navbar';
+
+type MainLayoutProps = {
+  children: React.ReactNode;
+};
+
+export function MainLayout({ children }: MainLayoutProps) {
+  const [opened, { toggle }] = useDisclosure();
+  const pathname = usePathname();
+
+  return (
+    <AppShell
+      header={{ height: 60 }}
+      navbar={{ 
+        width: 280,
+        breakpoint: 'sm',
+        collapsed: { mobile: !opened }
+      }}
+      padding="md"
+    >
+      <Header opened={opened} toggle={toggle} />
+      <Navbar pathname={pathname} />
+      
+      <AppShell.Main style={{ 
+        backgroundColor: 'var(--mantine-color-gray-0)',
+        backgroundImage: 'radial-gradient(var(--mantine-color-blue-0) 1px, transparent 1px)',
+        backgroundSize: '20px 20px'
+      }}>
+        <Box style={{ minHeight: '100vh' }}>
+          {children}
+        </Box>
+      </AppShell.Main>
+    </AppShell>
+  );
+}
+
+export default MainLayout;
+
+------------------
+// ./app/components/layout/Navbar.tsx
+'use client';
+
+import { AppShell, NavLink, ThemeIcon } from '@mantine/core';
+import { 
+  IconHome, 
+  IconChartBar, 
+  IconDroplet, 
+  IconFlask,
+  IconSettings 
+} from '@tabler/icons-react';
+import Link from 'next/link';
+
+interface NavbarProps {
+  pathname: string;
+}
+
+export function Navbar({ pathname }: NavbarProps) {
+  const links = [
+    { 
+      label: 'Dashboard', 
+      icon: IconHome, 
+      href: '/' 
+    },
+    { 
+      label: 'Aquarium Tracker', 
+      icon: IconChartBar, 
+      href: '/aquarium' 
+    },
+    { 
+      label: 'Maintenance', 
+      icon: IconDroplet, 
+      href: '/maintenance' 
+    },
+    { 
+      label: 'Water Tests', 
+      icon: IconFlask, 
+      href: '/tests' 
+    },
+    { 
+      label: 'Settings', 
+      icon: IconSettings, 
+      href: '/settings' 
+    }
+  ];
+
+  return (
+    <AppShell.Navbar p="md" style={{
+      background: 'linear-gradient(180deg, var(--mantine-color-blue-0) 0%, white 100%)'
+    }}>
+      {links.map((link) => (
+        <NavLink
+          key={link.href}
+          component={Link}
+          href={link.href}
+          label={link.label}
+          leftSection={
+            <ThemeIcon variant="light" size="sm">
+              <link.icon size={16} />
+            </ThemeIcon>
+          }
+          active={pathname === link.href}
+        />
+      ))}
+    </AppShell.Navbar>
+  );
+}
+
+
+
+------------------
+// ./app/components/layout/UserMenu.tsx
+'use client';
+
+import { Avatar, Menu } from '@mantine/core';
+import { 
+  IconUser, 
+  IconSettings, 
+  IconHelp, 
+  IconLogout 
+} from '@tabler/icons-react';
+
+export function UserMenu() {
+  return (
+    <Menu shadow="md" width={200}>
+      <Menu.Target>
+        <Avatar 
+          color="blue" 
+          radius="xl" 
+          style={{ cursor: 'pointer' }}
+        >
+          AQ
+        </Avatar>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Account</Menu.Label>
+        <Menu.Item leftSection={<IconUser size={14} />}>
+          Profile
+        </Menu.Item>
+        <Menu.Item leftSection={<IconSettings size={14} />}>
+          Settings
+        </Menu.Item>
+        <Menu.Item leftSection={<IconHelp size={14} />}>
+          Help
+        </Menu.Item>
+        <Menu.Divider />
+        <Menu.Item 
+          leftSection={<IconLogout size={14} />}
+          color="red"
+        >
+          Logout
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+
+
+
+------------------
+// ./app/components/maintinence/MaintenanceForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/maintinence/MaintenanceLogCard.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/parameters/ParameterForm.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/parameters/ParameterGraph.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/parameters/WaterParameterCard.tsx
+// app/components/parameters/WaterParameterCard.tsx
+import { Card, Group, Text, ThemeIcon } from '@mantine/core';
+import { IconProps } from '@tabler/icons-react';
+import type { FC } from 'react';
+
+interface WaterParameterCardProps {
+  icon: FC<IconProps>;
+  label: string;
+  value: string | number;
+  prevValue?: string | number;
+  color?: string;
+  status?: 'good' | 'warning' | 'critical';
+  unit?: string;
+}
+
+export function WaterParameterCard({
+  icon: Icon,
+  label,
+  value,
+  prevValue,
+  color = 'blue',
+  status = 'good',
+  unit = ''
+}: WaterParameterCardProps) {
+  const statusColors = {
+    good: 'green',
+    warning: 'yellow',
+    critical: 'red'
+  };
+
+  return (
+    <Card withBorder radius="md" padding="md">
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Text size="xs" tt="uppercase" fw={700} c="dimmed">
+            {label}
+          </Text>
+          <Text size="lg" fw={500}>
+            {value}
+            {unit && <span style={{ fontSize: '0.8em' }}>{unit}</span>}
+          </Text>
+          {prevValue && (
+            <Text c="dimmed" size="sm" mt={4}>
+              Previous: {prevValue}
+              {unit && unit}
+            </Text>
+          )}
+        </div>
+        <ThemeIcon
+          size="lg"
+          radius="md"
+          variant="light"
+          color={statusColors[status]}
+        >
+          <Icon size={20} />
+        </ThemeIcon>
+      </Group>
+    </Card>
+  );
+}
+
+------------------
+// ./app/components/shared/Card.tsx
+
+/* TODO: This file needs implementation */
+
+
+------------------
+// ./app/components/shared/ErrorBoundary.tsx
+'use client';
+
+import { Alert, Button, Container, Stack } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
+
+interface ErrorBoundaryProps {
+  error: Error;
+  reset: () => void;
+}
+
+export function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
+  return (
+    <Container size="md" py="xl">
+      <Stack align="center" gap="md">
+        <Alert 
+          icon={<IconAlertCircle size={24} />}
+          title="Something went wrong!"
+          color="red"
+          radius="md"
+        >
+          {error.message}
+        </Alert>
+        <Button 
+          onClick={reset}
+          variant="light"
+          color="blue"
+          size="md"
+        >
+          Try again
+        </Button>
+      </Stack>
+    </Container>
+  );
+}
+
+------------------
+// ./app/components/shared/LoadingSpinner.tsx
+'use client';
+
+import { Center, Loader, Stack, Text } from '@mantine/core';
+
+interface LoadingSpinnerProps {
+  message?: string;
+}
+
+export function LoadingSpinner({ message = 'Loading...' }: LoadingSpinnerProps) {
+  return (
+    <Center h="100vh">
+      <Stack align="center" gap="xs">
+        <Loader size="lg" color="blue" />
+        <Text size="sm" c="dimmed">{message}</Text>
+      </Stack>
+    </Center>
+  );
+}
+
+
+
+
+------------------
+// ./app/components/shared/ThemeToggle.tsx
+'use client';
+
+import { ActionIcon, Tooltip, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
+import { IconSun, IconMoon } from '@tabler/icons-react';
+
+export function ThemeToggle() {
+  const { setColorScheme } = useMantineColorScheme();
+  const computedColorScheme = useComputedColorScheme('light');
+
+  return (
+    <Tooltip label={`Switch to ${computedColorScheme === 'dark' ? 'light' : 'dark'} theme`}>
+      <ActionIcon
+        onClick={() => setColorScheme(computedColorScheme === 'dark' ? 'light' : 'dark')}
+        variant="subtle"
+        color="gray"
+        size="lg"
+      >
+        {computedColorScheme === 'dark' ? (
+          <IconSun size={20} color="white" />
+        ) : (
+          <IconMoon size={20} color="white" />
+        )}
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
+
+
+
+------------------
+// ./app/error.tsx
+'use client';
+
+import { useEffect } from 'react';
+import { Button, Container, Text, Title, Stack } from '@mantine/core';
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
+  return (
+    <Container size="md" py="xl">
+      <Stack align="center" gap="md">
+        <Title order={1} c="blue.8">Something went wrong!</Title>
+        <Text c="dimmed" size="lg" ta="center">
+          {error.message || 'An unexpected error occurred.'}
+        </Text>
+        <Button
+          onClick={reset}
+          variant="light"
+          color="blue"
+          size="md"
+        >
+          Try again
+        </Button>
+      </Stack>
+    </Container>
+  );
+}
+
+
+------------------
+// ./app/globals.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+/* Use Mantine's color scheme system */
+[data-mantine-color-scheme="dark"] {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 0, 0, 0;
+}
+
+body {
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--mantine-color-text);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--background-end-rgb))
+  )
+  rgb(var(--background-start-rgb));
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--mantine-color-gray-1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--mantine-color-gray-3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mantine-color-gray-4);
+}
+
+/* Prevent blue highlight on mobile tap */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+------------------
+// ./app/layout.tsx
+// app/layout.tsx
+import '@mantine/core/styles.css';
+import './globals.css';
+import { MantineProvider, createTheme, ColorSchemeScript } from '@mantine/core';
+
+const theme = createTheme({
+  primaryColor: 'blue',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  defaultRadius: 'sm',
+  colors: {
+    blue: [
+      '#E3F2FD', // 0: Lightest - good for backgrounds
+      '#BBDEFB', // 1
+      '#90CAF9', // 2
+      '#64B5F6', // 3
+      '#42A5F5', // 4
+      '#2196F3', // 5: Primary
+      '#1E88E5', // 6
+      '#1976D2', // 7
+      '#1565C0', // 8
+      '#0D47A1'  // 9: Darkest - good for text
+    ]
+  },
+  components: {
+    Button: {
+      defaultProps: {
+        radius: 'sm',
+      }
+    },
+    Text: {
+      defaultProps: {
+        size: 'sm',
+      }
+    }
+  }
+});
+
+export const metadata = {
+  title: 'Betta-MD',
+  description: 'Aquarium Management System',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ColorSchemeScript defaultColorScheme="light" />
+      </head>
+      <body className="antialiased">
+        <MantineProvider 
+          theme={theme}
+          defaultColorScheme="light"
+        >
+          {children}
+        </MantineProvider>
+      </body>
+    </html>
+  );
+}
+
+------------------
+// ./app/loading.tsx
+import { Container, Loader, Center } from '@mantine/core';
+
+export default function Loading() {
+  return (
+    <Container size="md" py="xl">
+      <Center>
+        <Loader color="blue" size="lg" />
+      </Center>
+    </Container>
+  );
+}
+
+
+------------------
+// ./app/maintenance/page.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { query } from '../utils/db';
+import { getRequestContext } from '../types/cloudflare';
+import { authMiddleware } from '../utils/auth';
+
+export const config = {
+  runtime: 'edge',
+  viewport: {
+    viewportWidth: 'device-width',
+    viewportInitialScale: 1,
+    viewportMinimumScale: 1,
+    viewportMaximumScale: 1,
+  },
+};
+
+type ExtendedNextApiRequest = NextApiRequest & {
+  body: {
+    ph: number;
+    ammonia: number;
+    nitrite: number;
+    nitrate: number;
+    id?: number;
+  };
+  query: {
+    page?: string;
+    limit?: string;
+    sort?: string;
+    order?: string;
+  };
+};
+
+async function handler(req: ExtendedNextApiRequest, res: NextApiResponse) {
+  const ctx = getRequestContext();
+  const userId = process.env.USER_ID;
+
+  if (req.method === 'POST') {
+    const { ph, ammonia, nitrite, nitrate } = req.body;
+
+    try {
+      await query(
+        'INSERT INTO maintenance_logs (user_id, ph, ammonia, nitrite, nitrate) VALUES (?, ?, ?, ?, ?)',
+        [userId, ph, ammonia, nitrite, nitrate]
+      );
+      res.status(201).json({ message: 'Maintenance log created successfully' });
+    } catch (error) {
+      console.error('Error creating maintenance log:', error);
+      res.status(500).json({ error: 'Failed to create maintenance log' });
+    }
+  } else if (req.method === 'GET') {
+    const { page = '1', limit = '10', sort = 'created_at', order = 'DESC' } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    try {
+      const logs = await query(
+        `SELECT * FROM maintenance_logs WHERE user_id = ? ORDER BY ?? ${order} LIMIT ? OFFSET ?`,
+        [userId, sort, Number(limit), offset]
+      );
+      res.status(200).json({ logs, page: Number(page), limit: Number(limit) });
+    } catch (error) {
+      console.error('Error fetching maintenance logs:', error);
+      res.status(500).json({ error: 'Failed to fetch maintenance logs' });
+    }
+  } else if (req.method === 'DELETE') {
+    const { id } = req.body;
+
+    try {
+      await query('DELETE FROM maintenance_logs WHERE id = ? AND user_id = ?', [id, userId]);
+      res.status(200).json({ message: 'Maintenance log deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting maintenance log:', error);
+      res.status(500).json({ error: 'Failed to delete maintenance log' });
+    }
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}
+
+export default authMiddleware(handler);
+
+------------------
+// ./app/middleware.ts
+// app/middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { verify } from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// Add paths that don't require authentication
+const PUBLIC_PATHS = [
+  '/login',
+  '/register',
+  '/api/auth/login',
+  '/api/auth/register'
+];
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Allow public paths
+  if (PUBLIC_PATHS.includes(pathname)) {
+    return NextResponse.next();
+  }
+
+  // Check for auth token
+  const token = request.cookies.get('auth-token')?.value;
+
+  if (!token) {
+    // Redirect to login if accessing page
+    if (!pathname.startsWith('/api/')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    // Return 401 if accessing API
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Authentication required' 
+    }, { status: 401 });
+  }
+
+  try {
+    // Verify token
+    const decoded = verify(token, JWT_SECRET) as { userId: string };
+    const response = NextResponse.next();
+    
+    // Add user info to headers for API routes
+    response.headers.set('X-User-Id', decoded.userId);
+    
+    return response;
+  } catch (error) {
+    // Token is invalid
+    if (!pathname.startsWith('/api/')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Invalid token' 
+    }, { status: 401 });
+  }
+}
+
+export const config = {
+  matcher: [
+    // Pages that require auth
+    '/maintenance/:path*',
+    '/parameters/:path*',
+    '/equipment/:path*',
+    '/inhabitants/:path*',
+    // API routes that require auth
+    '/api/maintenance-logs/:path*',
+    '/api/parameters/:path*',
+    '/api/equipment/:path*',
+    '/api/inhabitants/:path*'
+  ]
+};
+
+------------------
+// ./app/page.tsx
+'use client';
+
+import { MainLayout } from '../app/components/layout/MainLayout';
+import { 
+  Container, 
+  Title, 
+  Text, 
+  Stack,
+  SimpleGrid,
+  Card,
+  Group,
+  ThemeIcon,
+  Button,
+  Paper,
+  RingProgress
+} from '@mantine/core';
+import { 
+  IconFish, 
+  IconDroplet,
+  IconFlask,
+  IconChartBar 
+} from '@tabler/icons-react';
+import Link from 'next/link';
+
+const DashboardCard = ({ 
+  title, 
+  description, 
+  icon: Icon, 
+  href,
+  color = 'blue' 
+}: {
+  title: string;
+  description: string;
+  icon: typeof IconFish;
+  href: string;
+  color?: string;
+}) => (
+  <Card 
+    component={Link}
+    href={href}
+    shadow="sm" 
+    padding="lg" 
+    radius="md" 
+    withBorder
+    style={{ 
+      textDecoration: 'none',
+      transition: 'transform 0.2s',
+      '&:hover': { transform: 'translateY(-5px)' }
+    }}
+  >
+    <Group>
+      <ThemeIcon 
+        size="xl" 
+        radius="md" 
+        variant="light" 
+        color={color}
+      >
+        <Icon size={28} />
+      </ThemeIcon>
+      <div>
+        <Text fw={500} size="lg" mb={5}>{title}</Text>
+        <Text c="dimmed" size="sm">{description}</Text>
+      </div>
+    </Group>
+  </Card>
+);
+
+export default function HomePage() {
+  return (
+    <MainLayout>
+      <Container size="lg" py="xl">
+        <Stack gap="xl">
+          {/* Welcome Section */}
+          <div>
+            <Title order={1} size="h2" mb="xs">Welcome to Betta-MD</Title>
+            <Text c="dimmed" size="lg">
+              Your comprehensive aquarium management dashboard
+            </Text>
+          </div>
+
+          {/* Tank Status Overview */}
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Group align="flex-start" mb="md">
+              <RingProgress
+                size={100}
+                thickness={10}
+                roundCaps
+                sections={[
+                  { value: 40, color: 'cyan' },
+                  { value: 30, color: 'blue' },
+                  { value: 20, color: 'indigo' }
+                ]}
+                label={
+                  <Group justify="center">
+                    <IconFish size={20} />
+                  </Group>
+                }
+              />
+              <div>
+                <Text fw={500} size="lg">Tank Health Overview</Text>
+                <Text size="sm" c="dimmed" mt={5}>
+                  Your aquarium is in good condition. Next water change recommended in 2 days.
+                </Text>
+              </div>
+            </Group>
+
+            <Paper bg="blue.0" p="md" radius="md">
+              <Group justify="space-between">
+                <div>
+                  <Text size="sm" fw={500}>Quick Actions Needed</Text>
+                  <Text size="xs" c="dimmed">Check pH levels and perform water test</Text>
+                </div>
+                <Button variant="light" size="xs" component={Link} href="/aquarium">
+                  Go to Tracker
+                </Button>
+              </Group>
+            </Paper>
+          </Card>
+
+          {/* Main Navigation Cards */}
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
+            <DashboardCard
+              title="Aquarium Tracker"
+              description="Monitor water parameters and get recommendations"
+              icon={IconChartBar}
+              href="/aquarium"
+              color="blue"
+            />
+            <DashboardCard
+              title="Maintenance Log"
+              description="Track water changes and maintenance tasks"
+              icon={IconDroplet}
+              href="/maintenance"
+              color="cyan"
+            />
+            <DashboardCard
+              title="Water Tests"
+              description="Record and analyze water test results"
+              icon={IconFlask}
+              href="/tests"
+              color="indigo"
+            />
+          </SimpleGrid>
+
+          {/* Recent Activity or Tips could go here */}
+        </Stack>
+      </Container>
+    </MainLayout>
+  );
+}
+
+------------------
+// ./app/parameters/page.tsx
+'use client';
+
+import { SimpleGrid, Container, Title } from '@mantine/core';
+import { IconThermometer, IconDropletHalfFilled, IconBleachChlorine, IconFlask2Off, IconFlask2 } from '@tabler/icons-react';
+import { WaterParameterCard } from '../components/parameters/WaterParameterCard';
+
+type ParameterType = 'temperature' | 'ph' | 'ammonia' | 'nitrite' | 'nitrate';
+
+const BETTA_PARAMETERS: Record<ParameterType, any> = {
+  temperature: {
+    min: 76,
+    max: 82,
+    optimal: 78,
+    unit: '°F'
+  },
+  ph: {
+    min: 8,
+    max: 7,
+    optimal: 7.4,
+    unit: 'pH'
+  },
+  ammonia: {
+    max: 0.25,
+    optimal: 0,
+    unit: 'ppm'
+  },
+  nitrite: {
+    max: 0.25,
+    optimal: 0,
+    unit: 'ppm'
+  },
+  nitrate: {
+    max: 50,
+    optimal: 20,
+    unit: 'ppm'
+  }
+};
+
+export default function ParametersPage() {
+// In a real app, you'd fetch this data from your API
+const currentParameters = {
+    temperature: 78.5,
+    ph: 7.2,
+    ammonia: 0,
+    nitrite: 0,
+    nitrate: 0
+};
+
+const previousParameters = {
+    temperature: 77.8,
+    ph: 7.0,
+    ammonia: 0,
+    nitrite: 0,
+    nitrate: 0
+};
+
+function getParameterStatus(type: ParameterType, value: number) {
+    const params = BETTA_PARAMETERS[type];
+    if (type === 'temperature') {
+    if (value < params.min || value > params.max) return 'critical';
+    if (Math.abs(value - params.optimal) > 2) return 'warning';
+    return 'good';
+    }
+    if (type === 'ph') {
+    if (value < params.min || value > params.max) return 'critical';
+    if (Math.abs(value - params.optimal) > 0.5) return 'warning';
+    return 'good';
+    }
+    // For ammonia and nitrite
+    if (value > params.max) return 'critical';
+    if (value > 0) return 'warning';
+    return 'good';
+}
+
+return (
+    <Container size="lg" py="xl">
+    <Title order={2} mb="lg">Water Parameters</Title>
+    
+    <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+        <WaterParameterCard
+        icon={IconThermometer}
+        label="Temperature"
+        value={currentParameters.temperature.toString()}
+        prevValue={previousParameters.temperature.toString()}
+        unit={BETTA_PARAMETERS.temperature.unit}
+        status={getParameterStatus('temperature', currentParameters.temperature)}
+        />
+        
+        <WaterParameterCard
+        icon={IconDropletHalfFilled}
+        label="Level"
+        unit={BETTA_PARAMETERS.temperature.unit}
+        value={currentParameters.ph.toString()}
+        prevValue={previousParameters.ph.toString()}
+        status={getParameterStatus('ph', currentParameters.ph)}
+        />
+        
+        <WaterParameterCard
+        icon={IconBleachChlorine}
+        label="Ammonia"
+        value={currentParameters.ammonia.toString()}
+        prevValue={previousParameters.ammonia.toString()}
+        unit={BETTA_PARAMETERS.ammonia.unit}
+        status={getParameterStatus('ammonia', currentParameters.ammonia)}
+        />
+        
+        <WaterParameterCard
+        icon={IconFlask2Off}
+        label="Nitrite"
+        value={currentParameters.nitrite.toString()}
+        prevValue={previousParameters.nitrite.toString()}
+        unit={BETTA_PARAMETERS.nitrite.unit}
+        status={getParameterStatus('nitrite', currentParameters.nitrite)}
+        />
+
+        <WaterParameterCard
+        icon={IconFlask2}
+        label="Nitrate"
+        value={currentParameters.nitrate.toString()}
+        prevValue={previousParameters.nitrate.toString()}
+        unit={BETTA_PARAMETERS.nitrate.unit}
+        status={getParameterStatus('nitrate', currentParameters.nitrate)}
+        />
+    </SimpleGrid>
+    </Container>
+);
+}
+
+------------------
+// ./app/tests/page.tsx
+'use client';
+
+import { MainLayout } from '../components/layout/MainLayout';
+import { 
+  Container, 
+  Title, 
+  Text, 
+  Stack,
+  SimpleGrid,
+  Card,
+  Group,
+  ThemeIcon,
+  Button,
+  Paper,
+  RingProgress
+} from '@mantine/core';
+import { 
+  IconFish, 
+  IconDroplet,
+  IconFlask,
+  IconChartBar 
+} from '@tabler/icons-react';
+import Link from 'next/link';
+
+const DashboardCard = ({ 
+  title, 
+  description, 
+  icon: Icon, 
+  href,
+  color = 'blue' 
+}: {
+  title: string;
+  description: string;
+  icon: typeof IconFish;
+  href: string;
+  color?: string;
+}) => (
+  <Card 
+    component={Link}
+    href={href}
+    shadow="sm" 
+    padding="lg" 
+    radius="md" 
+    withBorder
+    style={{ 
+      textDecoration: 'none',
+      transition: 'transform 0.2s',
+      '&:hover': { transform: 'translateY(-5px)' }
+    }}
+  >
+    <Group>
+      <ThemeIcon 
+        size="xl" 
+        radius="md" 
+        variant="light" 
+        color={color}
+      >
+        <Icon size={28} />
+      </ThemeIcon>
+      <div>
+        <Text fw={500} size="lg" mb={5}>{title}</Text>
+        <Text c="dimmed" size="sm">{description}</Text>
+      </div>
+    </Group>
+  </Card>
+);
+
+export default function HomePage() {
+  return (
+    <MainLayout>
+      <Container size="lg" py="xl">
+        <Stack gap="xl">
+          {/* Welcome Section */}
+          <div>
+            <Title order={1} size="h2" mb="xs">Welcome to Betta-MD</Title>
+            <Text c="dimmed" size="lg">
+              Your comprehensive aquarium management dashboard
+            </Text>
+          </div>
+
+          {/* Tank Status Overview */}
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Group align="flex-start" mb="md">
+              <RingProgress
+                size={100}
+                thickness={10}
+                roundCaps
+                sections={[
+                  { value: 40, color: 'cyan' },
+                  { value: 30, color: 'blue' },
+                  { value: 20, color: 'indigo' }
+                ]}
+                label={
+                  <Group justify="center">
+                    <IconFish size={20} />
+                  </Group>
+                }
+              />
+              <div>
+                <Text fw={500} size="lg">Tank Health Overview</Text>
+                <Text size="sm" c="dimmed" mt={5}>
+                  Your aquarium is in good condition. Next water change recommended in 2 days.
+                </Text>
+              </div>
+            </Group>
+
+            <Paper bg="blue.0" p="md" radius="md">
+              <Group justify="space-between">
+                <div>
+                  <Text size="sm" fw={500}>Quick Actions Needed</Text>
+                  <Text size="xs" c="dimmed">Check pH levels and perform water test</Text>
+                </div>
+                <Button variant="light" size="xs" component={Link} href="/aquarium">
+                  Go to Tracker
+                </Button>
+              </Group>
+            </Paper>
+          </Card>
+
+          {/* Main Navigation Cards */}
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
+            <DashboardCard
+              title="Aquarium Tracker"
+              description="Monitor water parameters and get recommendations"
+              icon={IconChartBar}
+              href="/aquarium"
+              color="blue"
+            />
+            <DashboardCard
+              title="Maintenance Log"
+              description="Track water changes and maintenance tasks"
+              icon={IconDroplet}
+              href="/maintenance"
+              color="cyan"
+            />
+            <DashboardCard
+              title="Water Tests"
+              description="Record and analyze water test results"
+              icon={IconFlask}
+              href="/tests"
+              color="indigo"
+            />
+          </SimpleGrid>
+
+          {/* Recent Activity or Tips could go here */}
+        </Stack>
+      </Container>
+    </MainLayout>
+  );
+}
+
+------------------
+// ./app/types/cloudflare.d.ts
+export interface D1Database {
+  prepare: (query: string) => D1PreparedStatement;
+  dump: () => Promise<ArrayBuffer>;
+  batch: (statements: D1PreparedStatement[]) => Promise<D1Result[]>;
+  exec: (query: string) => Promise<D1Result>;
+}
+
+export interface D1PreparedStatement {
+  bind: (...values: any[]) => D1PreparedStatement;
+  first: <T = unknown>(colName?: string) => Promise<T | null>;
+  run: () => Promise<D1Result>;
+  all: <T = unknown>() => Promise<D1Result<T>>;
+}
+
+export interface D1Result<T = unknown> {
+  results?: T[];
+  success: boolean;
+  error?: string;
+  meta?: object;
+}
+
+export interface KVNamespace {
+  get: (key: string, options?: Partial<KVNamespaceGetOptions<undefined>>) => Promise<string | null>;
+  put: (key: string, value: string | ReadableStream | ArrayBuffer, options?: KVNamespacePutOptions) => Promise<void>;
+  delete: (key: string) => Promise<void>;
+}
+
+export interface Env {
+  DB: D1Database;
+  ENVIRONMENT: string;
+  KV: KVNamespace;
+}
+
+export interface CloudflareEnv extends Env {
+  DB: D1Database;
+}
+
+export type RequestContext = {
+  env: CloudflareEnv;
+  waitUntil: (promise: Promise<any>) => void;
+  passThroughOnException: () => void;
+};
+
+export function getRequestContext(): RequestContext {
+  return (globalThis as any).getRequestContext();
+}
+
+export type MaintenanceLog = {
+  id: number;
+  maintenance_type: string;
+  water_change_amount?: number;
+  filter_cleaned: number;
+  substrate_vacuumed: number;
+  plants_trimmed: number;
+  equipment_cleaned?: string;
+  products_used?: string;
+  notes?: string;
+  ph?: number;
+  ammonia?: number;
+  nitrite?: number;
+  nitrate?: number;
+  temperature?: number;
+  created_at: string;
+};
+
+export type WaterParameters = {
+  id: number;
+  ph: number;
+  temperature?: number;
+  ammonia: number;
+  nitrite: number;
+  nitrate: number;
+  gh?: number;
+  kh?: number;
+  tds?: number;
+  created_at: string;
+  notes?: string;
+};
+
+export type Equipment = {
+  id: number;
+  equipment_type: string;
+  brand?: string;
+  model?: string;
+  purchase_date?: string;
+  last_maintenance?: string;
+  maintenance_interval?: number;
+  status: 'active' | 'broken' | 'replaced';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Inhabitant = {
+  id: number;
+  species: string;
+  count: number;
+  date_added: string;
+  status: 'active' | 'deceased' | 'removed';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+------------------
+// ./app/types/metadata.ts
+// app/types/metadata.ts
+
+export const siteConfig = {
+    name: 'Betta-MD',
+    description: 'Aquarium Management System',
+    url: 'https://your-domain.com',
+    ogImage: 'https://your-domain.com/og.jpg',
+    links: {
+      twitter: 'https://twitter.com/yourusername',
+      github: 'https://github.com/yourusername/betta-md-app',
+    },
+  } as const;
+  
+  export type SiteConfig = typeof siteConfig;
+
+------------------
+// ./app/utils/auth.ts
+import { NextApiRequest, NextApiResponse, NextApiHandler } from 'next';
+import jwt from 'jsonwebtoken';
+import { getRequestContext, CloudflareEnv } from '../types/cloudflare.d';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+
+interface ExtendedNextApiRequest extends NextApiRequest {
+  userId?: number;
+}
+
+export const authMiddleware = (handler: NextApiHandler) => async (
+  req: ExtendedNextApiRequest,
+  res: NextApiResponse
+) => {
+  const token = req.headers.authorization?.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    const ctx = getRequestContext();
+    req.userId = ctx.env.USER_ID = decoded.userId;
+    return handler(req, res);
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+------------------
+// ./app/utils/db.ts
+import { D1Database, getRequestContext } from '../types/cloudflare.d';
+
+let db: D1Database;
+
+export async function getDB(): Promise<D1Database> {
+  if (!db) {
+    const ctx = getRequestContext();
+    db = ctx.env.DB;
+  }
+  return db;
+}
+
+export async function query(
+  sql: string,
+  params?: unknown[]
+): Promise<unknown[]> {
+  const db = await getDB();
+  const result = await db.prepare(sql).bind(params || []).first<unknown[]>();
+  return result || [];
+}
+
+------------------
+// ./env.d.ts
+// Generated by Wrangler by running `wrangler types --env-interface CloudflareEnv env.d.ts`
+
+// eslint-disable-next-line @typescript-eslint/no-empty-interface,@typescript-eslint/no-empty-object-type
+interface CloudflareEnv {
+}
+
+
+------------------
+// ./next-env.d.ts
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/basic-features/typescript for more information.
+
+
+------------------
+// ./next.config.mjs
+import { setupDevPlatform } from '@cloudflare/next-on-pages/next-dev';
+import { resolve } from 'path';
+
+if (process.env.NODE_ENV === 'development') {
+  await setupDevPlatform();
+}
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: true,
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@mantine/core': resolve(process.cwd(), 'node_modules/@mantine/core'),
+      '@mantine/hooks': resolve(process.cwd(), 'node_modules/@mantine/hooks'),
+      '@app': resolve(process.cwd(), 'app'),
+    };
+
+    return config;
+  },
+  experimental: {
+    optimizePackageImports: ['@mantine/core', '@mantine/hooks']
+  },
+};
+
+export default nextConfig;
+
+
+------------------
+// ./package-lock.json
+
+/* File truncated for brevity */
+
+
+------------------
+// ./postcss.config.mjs
+/** @type {import('postcss-load-config').Config} */
+const config = {
+  plugins: {
+    'tailwindcss': {},
+    'autoprefixer': {},
+    'postcss-preset-mantine': {},
+    'postcss-simple-vars': {
+      variables: {
+        'mantine-breakpoint-xs': '36em',
+        'mantine-breakpoint-sm': '48em',
+        'mantine-breakpoint-md': '62em',
+        'mantine-breakpoint-lg': '75em',
+        'mantine-breakpoint-xl': '88em',
+      },
+    },
+  },
+};
+
+export default config;
+
+------------------
+// ./tailwind.config.ts
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  corePlugins: {
+    preflight: false,
+  },
+  theme: {
+    extend: {
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+        "gradient-conic":
+          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
+      },
+      colors: {
+        'mantine-primary': 'var(--mantine-primary-color)',
+        'mantine-text': 'var(--mantine-color-text)',
+        'mantine-body': 'var(--mantine-color-body)',
+        aqua: {
+          50: 'var(--mantine-color-blue-0)',
+          100: 'var(--mantine-color-blue-1)',
+          200: 'var(--mantine-color-blue-2)',
+          300: 'var(--mantine-color-blue-3)',
+          400: 'var(--mantine-color-blue-4)',
+          500: 'var(--mantine-color-blue-5)',
+          600: 'var(--mantine-color-blue-6)',
+          700: 'var(--mantine-color-blue-7)',
+          800: 'var(--mantine-color-blue-8)',
+          900: 'var(--mantine-color-blue-9)',
+        },
+      },
+      spacing: {
+        'mantine-xs': 'var(--mantine-spacing-xs)',
+        'mantine-sm': 'var(--mantine-spacing-sm)',
+        'mantine-md': 'var(--mantine-spacing-md)',
+        'mantine-lg': 'var(--mantine-spacing-lg)',
+        'mantine-xl': 'var(--mantine-spacing-xl)',
+      },
+      borderRadius: {
+        'mantine-sm': 'var(--mantine-radius-sm)',
+        'mantine-md': 'var(--mantine-radius-md)',
+        'mantine-lg': 'var(--mantine-radius-lg)',
+      },
+    },
+  },
+  plugins: [],
+  important: false,
+};
+
+export default config;
+
+------------------
+// ./wrangler.toml
+name = "betta-md-app"
+main = "src/index.ts"
+compatibility_date = "2024-11-26"
+
+# Development environment configuration
+[env.development]
+compatibility_date = "2024-11-26"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "beta-md-app-dev"
+database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
+
+# Production environment configuration
+[env.production]
+compatibility_date = "2024-11-26"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+route = "betta-md-app.pages.dev/*"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "beta-md-app-prod"
+database_id = "b6a2b494-5cb0-4684-8f68-3bedc274a537"
+
+# Add root level D1 database configuration for local development
+[[d1_databases]]
+binding = "DB"
+database_name = "beta-md-app-dev"
+database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
+
+# Build output configuration
+[build]
+command = "npm run build"
+watch_dir = "src"
+
+# Variables configuration
+[vars]
+ENVIRONMENT = "development"
+DEFAULT_TEMP_WARNING_HIGH = "82.5"
+DEFAULT_TEMP_WARNING_LOW = "76.0"
+DEFAULT_PH_WARNING_HIGH = "7.5"
+DEFAULT_PH_WARNING_LOW = "6.5"
+AMMONIA_WARNING_LEVEL = "0.25"
+NITRITE_WARNING_LEVEL = "0.25"
+NITRATE_WARNING_LEVEL = "20.0"
