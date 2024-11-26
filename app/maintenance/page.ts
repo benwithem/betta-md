@@ -3,15 +3,7 @@ import { query } from '../utils/db';
 import { getRequestContext } from '../types/cloudflare';
 import { authMiddleware } from '../utils/auth';
 
-export const config = {
-  runtime: 'edge',
-  viewport: {
-    viewportWidth: 'device-width',
-    viewportInitialScale: 1,
-    viewportMinimumScale: 1,
-    viewportMaximumScale: 1,
-  },
-};
+export const runtime = "edge";
 
 type ExtendedNextApiRequest = NextApiRequest & {
   body: {

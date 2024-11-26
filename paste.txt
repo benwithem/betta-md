@@ -322,6 +322,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 ------------------
 // ./app/api/equipment/route.ts
+// ./app/api/equipment/route.ts
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { CloudflareEnv } from '@/app/types/cloudflare';
@@ -330,6 +331,7 @@ export const runtime = 'edge';
 
 type EquipmentType = 'filter_media' | 'heater' | 'water_pump' | 'air_pump';
 
+// Define the maintenance schedules for different equipment types
 const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; maintenance: string }> = {
   'filter_media': { 
     interval_days: 30,
@@ -351,7 +353,8 @@ const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; main
 
 export async function POST(request: Request) {
   try {
-    interface EquipmentRequestBody {
+    // Define the expected structure of the request body
+    interface NewEquipmentData {
       equipment_type: string;
       brand: string;
       model: string;
@@ -360,6 +363,7 @@ export async function POST(request: Request) {
       notes: string;
     }
 
+    // Retrieve the equipment data from the request body
     const { 
       equipment_type,
       brand,
@@ -367,13 +371,22 @@ export async function POST(request: Request) {
       purchase_date,
       last_maintenance,
       notes 
-    } = await request.json() as EquipmentRequestBody;
+    } = await request.json() as NewEquipmentData;
 
+    // Get the necessary environment variables and database connection
     const ctx = getRequestContext();
     const env = ctx.env as CloudflareEnv;
     const db = env.DB;
 
-    // Add equipment record
+    // Validate the equipment type
+    if (!MAINTENANCE_SCHEDULES[equipment_type as EquipmentType]) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid equipment type' },
+        { status: 400 }
+      );
+    }
+
+    // Insert the new equipment record into the database
     await db.prepare(`
       INSERT INTO equipment 
       (equipment_type, brand, model, purchase_date, last_maintenance, notes) 
@@ -387,12 +400,14 @@ export async function POST(request: Request) {
       notes
     ).run();
 
+    // Return the maintenance schedule for the new equipment
     return NextResponse.json({ 
       maintenance_schedule: MAINTENANCE_SCHEDULES[equipment_type as EquipmentType],
       message: 'Equipment added successfully'
     });
 
   } catch (error) {
+    // Log the error and return a server error response
     console.error('Equipment error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -403,11 +418,12 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
+    // Get the necessary environment variables and database connection
     const ctx = getRequestContext();
     const env = ctx.env as CloudflareEnv;
     const db = env.DB;
 
-    // Get all equipment and calculate maintenance due dates
+    // Fetch all the equipment records from the database
     const results = await db.prepare(`
       SELECT 
         *, 
@@ -416,6 +432,7 @@ export async function GET() {
       ORDER BY next_maintenance_due ASC
     `).all();
 
+    // Return the equipment data and maintenance schedules
     return NextResponse.json({ 
       success: true,
       data: results.results,
@@ -423,6 +440,7 @@ export async function GET() {
     });
 
   } catch (error) {
+    // Log the error and return a server error response
     console.error('Equipment fetch error:', error);
     return NextResponse.json({ 
       success: false, 
@@ -533,7 +551,7 @@ export async function GET() {
 
 ------------------
 // ./app/api/maintenance-logs/route.ts
-// app/api/maintenance-logs/route.ts
+// ./app/api/maintenance-logs/route.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
@@ -556,17 +574,23 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!data.maintenance_type) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Maintenance type is required' 
-      }, { 
-        status: 400 
-      });
+      return NextResponse.json(
+        { success: false, error: 'Maintenance type is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate other fields as needed
+    if (typeof data.ph !== 'undefined' && (data.ph < 0 || data.ph > 14)) {
+      return NextResponse.json(
+        { success: false, error: 'pH value must be between 0 and 14' },
+        { status: 400 }
+      );
     }
 
     // Build dynamic query based on provided fields
-    const fields = Object.keys(data).filter(key => data[key] !== undefined);
-    const values = fields.map(key => data[key]);
+    const fields = Object.keys(data).filter(key => data[key as keyof MaintenanceLogInput] !== undefined);
+    const values = fields.map(key => data[key as keyof MaintenanceLogInput]);
     const query = `
       INSERT INTO maintenance_logs (${fields.join(', ')})
       VALUES (${fields.map(() => '?').join(', ')})
@@ -581,12 +605,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in maintenance log POST:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to create maintenance log' 
-    }, { 
-      status: 500 
-    });
+    return NextResponse.json(
+      { success: false, error: 'Failed to create maintenance log' },
+      { status: 500 }
+    );
   }
 }
 
@@ -595,6 +617,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
+    const sort = searchParams.get('sort') || 'created_at';
+    const order = searchParams.get('order') || 'DESC';
     const offset = (page - 1) * limit;
 
     const ctx = getRequestContext();
@@ -602,12 +626,12 @@ export async function GET(request: NextRequest) {
     const db = env.DB;
 
     const results = await db.prepare(`
-      SELECT * FROM maintenance_logs 
-      ORDER BY created_at DESC 
+      SELECT * FROM maintenance_logs
+      ORDER BY ?? ${order}
       LIMIT ? OFFSET ?
-    `).bind(limit, offset).all<MaintenanceLog>();
+    `).bind(sort, limit, offset).all<MaintenanceLog>();
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       data: results.results,
       pagination: {
@@ -619,12 +643,10 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in maintenance log GET:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch maintenance logs' 
-    }, { 
-      status: 500 
-    });
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch maintenance logs' },
+      { status: 500 }
+    );
   }
 }
 
