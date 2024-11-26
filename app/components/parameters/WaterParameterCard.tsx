@@ -8,7 +8,6 @@ interface WaterParameterCardProps {
   label: string;
   value: string | number;
   prevValue?: string | number;
-  color?: string;
   status?: 'good' | 'warning' | 'critical';
   unit?: string;
 }
@@ -18,7 +17,6 @@ export function WaterParameterCard({
   label,
   value,
   prevValue,
-  color = 'blue',
   status = 'good',
   unit = ''
 }: WaterParameterCardProps) {

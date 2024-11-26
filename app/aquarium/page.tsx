@@ -31,10 +31,10 @@ export default function AquariumTracker() {
   //const [sort, setSort] = useState('created_at');
   //const [order, setOrder] = useState('DESC');
 
-  const [page,] = useState(1);
-  const [limit] = useState(10);
-  const [sort] = useState('created_at');
-  const [order] = useState('DESC');
+  const [_page] = useState(1);
+  const [_limit] = useState(10);
+  const [_sort] = useState('created_at');
+  const [_order] = useState('DESC');
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -131,7 +131,6 @@ export default function AquariumTracker() {
                 label="Last Water Change"
                 value="3 days ago"
                 prevValue="7 days ago"
-                color="blue"
                 status="good"
               />
               <WaterParameterCard 
@@ -139,7 +138,6 @@ export default function AquariumTracker() {
                 label="Temperature"
                 value="78.5°F"
                 prevValue="77.8°F"
-                color="orange"
                 status="warning"
               />
               <WaterParameterCard 
@@ -147,7 +145,6 @@ export default function AquariumTracker() {
                 label="pH Level"
                 value="7.2"
                 prevValue="7.0"
-                color="violet"
                 status="good"
               />
             </SimpleGrid>

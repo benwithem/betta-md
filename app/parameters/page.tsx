@@ -6,7 +6,14 @@ import { WaterParameterCard } from '../components/parameters/WaterParameterCard'
 
 type ParameterType = 'temperature' | 'ph' | 'ammonia' | 'nitrite' | 'nitrate';
 
-const BETTA_PARAMETERS: Record<ParameterType, any> = {
+type ParameterRanges = {
+    min?: number;
+    max?: number;
+    optimal: number;
+    unit: string;
+  };
+
+const BETTA_PARAMETERS: Record<ParameterType, ParameterRanges> = {
   temperature: {
     min: 76,
     max: 82,
@@ -57,17 +64,17 @@ const previousParameters = {
 function getParameterStatus(type: ParameterType, value: number) {
     const params = BETTA_PARAMETERS[type];
     if (type === 'temperature') {
-    if (value < params.min || value > params.max) return 'critical';
+    if ((params.min !== undefined && value < params.min) || (params.max !== undefined && value > params.max)) return 'critical';
     if (Math.abs(value - params.optimal) > 2) return 'warning';
     return 'good';
     }
     if (type === 'ph') {
-    if (value < params.min || value > params.max) return 'critical';
+    if ((params.min !== undefined && value < params.min) || (params.max !== undefined && value > params.max)) return 'critical';
     if (Math.abs(value - params.optimal) > 0.5) return 'warning';
     return 'good';
     }
     // For ammonia and nitrite
-    if (value > params.max) return 'critical';
+    if (params.max !== undefined && value > params.max) return 'critical';
     if (value > 0) return 'warning';
     return 'good';
 }
