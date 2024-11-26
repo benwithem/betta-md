@@ -335,9 +335,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 ------------------
 // ./app/api/auth/verify/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken } from '@/app/utils/auth';
 
-/* TODO: This file needs implementation */
+export async function POST(request: NextRequest) {
+  try {
+    const token = request.cookies.get('auth-token')?.value || 
+                 request.headers.get('authorization')?.split(' ')[1];
 
+    if (!token) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'No token provided' 
+      }, { status: 401 });
+    }
+
+    const payload = await verifyToken(token);
+    if (!payload) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid token' 
+      }, { status: 401 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: { id: payload.userId }
+    });
+
+  } catch (error) {
+    console.error('Token verification error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Token verification failed' 
+    }, { status: 500 });
+  }
+}
 
 ------------------
 // ./app/api/equipment/route.ts
@@ -883,10 +916,10 @@ export default function AquariumTracker() {
   //const [sort, setSort] = useState('created_at');
   //const [order, setOrder] = useState('DESC');
 
-  const [page,] = useState(1);
-  const [limit] = useState(10);
-  const [sort] = useState('created_at');
-  const [order] = useState('DESC');
+  const [_page] = useState(1);
+  const [_limit] = useState(10);
+  const [_sort] = useState('created_at');
+  const [_order] = useState('DESC');
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -983,7 +1016,6 @@ export default function AquariumTracker() {
                 label="Last Water Change"
                 value="3 days ago"
                 prevValue="7 days ago"
-                color="blue"
                 status="good"
               />
               <WaterParameterCard 
@@ -991,7 +1023,6 @@ export default function AquariumTracker() {
                 label="Temperature"
                 value="78.5°F"
                 prevValue="77.8°F"
-                color="orange"
                 status="warning"
               />
               <WaterParameterCard 
@@ -999,7 +1030,6 @@ export default function AquariumTracker() {
                 label="pH Level"
                 value="7.2"
                 prevValue="7.0"
-                color="violet"
                 status="good"
               />
             </SimpleGrid>
@@ -1521,7 +1551,6 @@ interface WaterParameterCardProps {
   label: string;
   value: string | number;
   prevValue?: string | number;
-  color?: string;
   status?: 'good' | 'warning' | 'critical';
   unit?: string;
 }
@@ -1531,7 +1560,6 @@ export function WaterParameterCard({
   label,
   value,
   prevValue,
-  color = 'blue',
   status = 'good',
   unit = ''
 }: WaterParameterCardProps) {
@@ -2132,7 +2160,14 @@ import { WaterParameterCard } from '../components/parameters/WaterParameterCard'
 
 type ParameterType = 'temperature' | 'ph' | 'ammonia' | 'nitrite' | 'nitrate';
 
-const BETTA_PARAMETERS: Record<ParameterType, any> = {
+type ParameterRanges = {
+    min?: number;
+    max?: number;
+    optimal: number;
+    unit: string;
+  };
+
+const BETTA_PARAMETERS: Record<ParameterType, ParameterRanges> = {
   temperature: {
     min: 76,
     max: 82,
@@ -2183,17 +2218,17 @@ const previousParameters = {
 function getParameterStatus(type: ParameterType, value: number) {
     const params = BETTA_PARAMETERS[type];
     if (type === 'temperature') {
-    if (value < params.min || value > params.max) return 'critical';
+    if ((params.min !== undefined && value < params.min) || (params.max !== undefined && value > params.max)) return 'critical';
     if (Math.abs(value - params.optimal) > 2) return 'warning';
     return 'good';
     }
     if (type === 'ph') {
-    if (value < params.min || value > params.max) return 'critical';
+    if ((params.min !== undefined && value < params.min) || (params.max !== undefined && value > params.max)) return 'critical';
     if (Math.abs(value - params.optimal) > 0.5) return 'warning';
     return 'good';
     }
     // For ammonia and nitrite
-    if (value > params.max) return 'critical';
+    if (params.max !== undefined && value > params.max) return 'critical';
     if (value > 0) return 'warning';
     return 'good';
 }
@@ -2825,3 +2860,4 @@ DEFAULT_PH_WARNING_LOW = "6.5"
 AMMONIA_WARNING_LEVEL = "0.25"
 NITRITE_WARNING_LEVEL = "0.25"
 NITRATE_WARNING_LEVEL = "20.0"
+

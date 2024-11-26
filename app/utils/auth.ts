@@ -8,7 +8,7 @@ export interface ExtendedNextRequest extends NextRequest {
   userId?: number;
 }
 
-export async function createToken(payload: any): Promise<string> {
+export async function createToken(payload: Record<string, unknown>): Promise<string> {
   const secret = new TextEncoder().encode(JWT_SECRET);
   const token = await new jose.SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
@@ -17,7 +17,7 @@ export async function createToken(payload: any): Promise<string> {
   return token;
 }
 
-export async function verifyToken(token: string): Promise<any> {
+export async function verifyToken(token: string): Promise<Record<string, unknown> | null> {
   const secret = new TextEncoder().encode(JWT_SECRET);
   try {
     const { payload } = await jose.jwtVerify(token, secret);
@@ -45,7 +45,7 @@ export function authMiddleware(handler: Handler) {
 
     // Create a new headers object with the user ID
     const headers = new Headers(request.headers);
-    headers.set('X-User-Id', payload.userId.toString());
+    headers.set('X-User-Id', (payload as { userId: number }).userId.toString());
 
     // Create a new request with the updated headers
     const authenticatedRequest = new NextRequest(request, { headers });

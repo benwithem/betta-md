@@ -81,7 +81,7 @@ async function handleGet(request: NextRequest, env: CloudflareEnv): Promise<Next
   }
 }
 
-function validateParameters(params: any) {
+function validateParameters(params: Record<string, number>) {
   const errors = [];
 
   if (params.ph < PARAMETER_RANGES.ph.min || params.ph > PARAMETER_RANGES.ph.max) {
@@ -106,7 +106,7 @@ function validateParameters(params: any) {
   };
 }
 
-function generateRecommendations(params: any) {
+function generateRecommendations(params: Record<string, number>) {
   const recommendations = [];
 
   if (params.ammonia > 0) {

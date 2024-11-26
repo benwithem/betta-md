@@ -6,7 +6,7 @@ export interface D1Database {
 }
 
 export interface D1PreparedStatement {
-  bind: (...values: any[]) => D1PreparedStatement;
+  bind: (...values: unknown[]) => D1PreparedStatement;
   first: <T = unknown>(colName?: string) => Promise<T | null>;
   run: () => Promise<D1Result>;
   all: <T = unknown>() => Promise<D1Result<T>>;
@@ -37,7 +37,7 @@ export interface CloudflareEnv extends Env {
 
 export type RequestContext = {
   env: CloudflareEnv;
-  waitUntil: (promise: Promise<any>) => void;
+  waitUntil: (promise: Promise<unknown>) => void;
   passThroughOnException: () => void;
 };
 

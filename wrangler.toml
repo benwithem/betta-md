@@ -18,7 +18,8 @@ database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
 compatibility_date = "2024-11-26"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
-route = "betta-md-app.pages.dev/*"
+name = "betta-md-app"
+routes = ["betta-md-app.pages.dev/*"]
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -35,6 +36,13 @@ database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
 [build]
 command = "npm run build"
 watch_dir = "src"
+
+[build.upload]
+format = "service-worker"
+
+[site]
+bucket = ".vercel/output/static"
+entry-point = ".vercel/output/functions/_worker.js"
 
 # Variables configuration
 [vars]
