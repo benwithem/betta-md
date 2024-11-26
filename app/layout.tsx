@@ -1,44 +1,64 @@
-import { AppShell, Header, Footer, Navbar, Text, useMantineTheme, MantineTheme } from '@mantine/core';
-import Link from 'next/link';
+// app/layout.tsx
+import '@mantine/core/styles.css';
+import './globals.css';
+import { MantineProvider, createTheme, ColorSchemeScript } from '@mantine/core';
 
-const Layout: React.FC = ({ children }) => {
-  const theme: MantineTheme = useMantineTheme();
+const theme = createTheme({
+  primaryColor: 'blue',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  defaultRadius: 'sm',
+  colors: {
+    blue: [
+      '#E3F2FD', // 0: Lightest - good for backgrounds
+      '#BBDEFB', // 1
+      '#90CAF9', // 2
+      '#64B5F6', // 3
+      '#42A5F5', // 4
+      '#2196F3', // 5: Primary
+      '#1E88E5', // 6
+      '#1976D2', // 7
+      '#1565C0', // 8
+      '#0D47A1'  // 9: Darkest - good for text
+    ]
+  },
+  components: {
+    Button: {
+      defaultProps: {
+        radius: 'sm',
+      }
+    },
+    Text: {
+      defaultProps: {
+        size: 'sm',
+      }
+    }
+  }
+});
 
-  return (
-    <AppShell
-      padding="md"
-      header={
-        <Header height={60} p="xs" style={{ backgroundColor: theme.colors.blue[6] }}>
-          <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-            <Link href="/">
-              <Text size="xl" weight={700} color="white" style={{ cursor: 'pointer' }}>
-                Betta-MD
-              </Text>
-            </Link>
-          </div>
-        </Header>
-      }
-      footer={
-        <Footer height={60} p="xs" style={{ backgroundColor: theme.colors.blue[6] }}>
-          <Text size="sm" color="white">
-            © 2023 Betta-MD. All rights reserved.
-          </Text>
-        </Footer>
-      }
-      navbar={
-        <Navbar p="xs" width={{ base: 300 }} style={{ backgroundColor: theme.colors.blue[5] }}>
-          <Navbar.Link href="/" color="white">
-            Home
-          </Navbar.Link>
-          <Navbar.Link href="/aquarium" color="white">
-            Aquarium Tracker
-          </Navbar.Link>
-        </Navbar>
-      }
-    >
-      {children}
-    </AppShell>
-  );
+export const metadata = {
+  title: 'Betta-MD',
+  description: 'Aquarium Management System',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
 };
 
-export default Layout;
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ColorSchemeScript defaultColorScheme="light" />
+      </head>
+      <body className="antialiased">
+        <MantineProvider 
+          theme={theme}
+          defaultColorScheme="light"
+        >
+          {children}
+        </MantineProvider>
+      </body>
+    </html>
+  );
+}
