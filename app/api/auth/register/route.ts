@@ -4,12 +4,10 @@ import { CloudflareEnv } from '@/app/types/cloudflare';
 import * as bcrypt from 'bcryptjs';
 import { createToken } from '@/app/utils/auth';
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, { env }: { env: CloudflareEnv }) {
   try {
     const { email, password } = await request.json() as { email: string, password: string };
     
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
     const db = env.DB;
 
     // Check if user already exists

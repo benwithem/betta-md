@@ -1,48 +1,38 @@
+# Basic configuration
 name = "betta-md-app"
-main = "src/index.ts"
+main = ".vercel/output/functions/_worker.js"
 compatibility_date = "2024-11-26"
+compatibility_flags = ["nodejs_compat"]
+
+# Build configuration
+[build]
+command = "npm run build"
+watch_dir = "src"
 
 # Development environment configuration
 [env.development]
-compatibility_date = "2024-11-26"
-compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [[env.development.d1_databases]]
 binding = "DB"
-database_name = "beta-md-app-dev"
+database_name = "betta-md-app-dev"
 database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
 
 # Production environment configuration
 [env.production]
-compatibility_date = "2024-11-26"
-compatibility_flags = ["nodejs_compat"]
 workers_dev = false
-name = "betta-md-app"
-routes = ["betta-md-app.pages.dev/*"]
+route = "betta-md-app.pages.dev/*"
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "beta-md-app-prod"
+database_name = "betta-md-app-prod"
 database_id = "b6a2b494-5cb0-4684-8f68-3bedc274a537"
 
 # Add root level D1 database configuration for local development
 [[d1_databases]]
 binding = "DB"
-database_name = "beta-md-app-dev"
+database_name = "betta-md-app-dev"
 database_id = "ba02a968-df3b-4a53-bd04-cb69f17620f7"
-
-# Build output configuration
-[build]
-command = "npm run build"
-watch_dir = "src"
-
-[build.upload]
-format = "service-worker"
-
-[site]
-bucket = ".vercel/output/static"
-entry-point = ".vercel/output/functions/_worker.js"
 
 # Variables configuration
 [vars]
@@ -54,3 +44,7 @@ DEFAULT_PH_WARNING_LOW = "6.5"
 AMMONIA_WARNING_LEVEL = "0.25"
 NITRITE_WARNING_LEVEL = "0.25"
 NITRATE_WARNING_LEVEL = "20.0"
+
+# Site configuration
+[site]
+bucket = ".vercel/output/static"

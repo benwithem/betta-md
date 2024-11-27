@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createToken } from '@/app/utils/auth';
-import { getRequestContext } from '../../../types/cloudflare';
 import { CloudflareEnv } from '@/app/types/cloudflare';
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, { env }: { env: CloudflareEnv }) {
   try {
     const { email, password } = await request.json() as { email: string, password: string };
     
-    const ctx = getRequestContext();
-    const env = ctx.env as CloudflareEnv;
     const db = env.DB;
 
     const user = await db.prepare(

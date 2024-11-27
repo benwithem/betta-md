@@ -81,3 +81,11 @@ logs
 
 # Yarn Integrity file
 .yarn-integrity
+
+.env
+.env*.local
+node_modules
+.next
+out
+build
+.vercel
