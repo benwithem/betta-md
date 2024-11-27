@@ -4,6 +4,8 @@ import { CloudflareEnv } from '@/app/types/cloudflare';
 import * as bcrypt from 'bcryptjs';
 import { createToken } from '@/app/utils/auth';
 
+export const runtime = 'edge';
+
 export async function POST(request: NextRequest, { env }: { env: CloudflareEnv }) {
   try {
     const { email, password } = await request.json() as { email: string, password: string };

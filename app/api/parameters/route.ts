@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
 
+export const runtime = 'edge';
+
 const PARAMETER_RANGES = {
   ph: { min: 6.5, max: 7.5, optimal: 7.0 },
   temperature: { min: 76, max: 82, optimal: 78 },

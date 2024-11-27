@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
 
+export const runtime = 'edge';
+
 type Species = 'Mystery Snail' | 'Ghost Shrimp' | 'Nerite Snail';
 
 const BETTA_COMPATIBLE_SPECIES: Record<Species, { max_count: number; current: number }> = {

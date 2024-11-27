@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CloudflareEnv } from '@/app/types/cloudflare';
 import { mockAuthMiddleware } from '@/app/utils/mockAuth';
 
+export const runtime = 'edge';
+
 async function handler(request: NextRequest, env: CloudflareEnv): Promise<NextResponse> {
   const userId = request.headers.get('X-User-Id');
 

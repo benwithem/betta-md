@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from '@/app/utils/auth';
 import { CloudflareEnv } from '@/app/types/cloudflare';
 
+export const runtime = 'edge';
+
 type EquipmentType = 'filter_media' | 'heater' | 'water_pump' | 'air_pump';
 
 const MAINTENANCE_SCHEDULES: Record<EquipmentType, { interval_days: number; maintenance: string }> = {

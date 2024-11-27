@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/app/utils/auth';
 
+export const runtime = 'edge';
+
 export async function POST(request: NextRequest) {
   try {
     const token = request.cookies.get('auth-token')?.value || 
